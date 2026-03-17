@@ -14,8 +14,7 @@ CHILD_PID=""
 if [ ! -e "/.installed" ]; then
     rm -f "/rootfs.tar.xz" "/rootfs.tar.gz"
     rm -rf /tmp/sbin
-    echo "nameserver 1.1.1.1" > /etc/resolv.conf
-    echo "nameserver 1.0.0.1" >> /etc/resolv.conf
+    printf 'nameserver 1.1.1.1\nnameserver 1.0.0.1\n' > /etc/resolv.conf
     touch "/.installed"
 fi
 
@@ -42,45 +41,45 @@ trap interrupt_child INT
 # ── Prompt ─────────────────────────────────────────────────────────────────
 get_dir() {
     case "$PWD" in
-        "$HOME"*) echo "~${PWD#$HOME}" ;;
-        *) echo "$PWD" ;;
+        "$HOME"*) printf '%s' "~${PWD#$HOME}" ;;
+        *) printf '%s' "$PWD" ;;
     esac
 }
 
 show_prompt() {
-    echo ""
-    printf "${LIGHT_ORANGE}root@${HOSTNAME}${NC}:${AMBER}$(get_dir)${NC}# "
+    printf '\n'
+    printf '%b' "${LIGHT_ORANGE}root@${HOSTNAME}${NC}:${AMBER}$(get_dir)${NC}# "
 }
 
 # ── History ────────────────────────────────────────────────────────────────
 save_history() {
     [ -z "$1" ] && return
-    echo "$1" >> "$HISTORY_FILE"
+    printf '%s\n' "$1" >> "$HISTORY_FILE"
     tail -n "$MAX_HISTORY" "$HISTORY_FILE" > "$HISTORY_FILE.tmp" 2>/dev/null
     mv "$HISTORY_FILE.tmp" "$HISTORY_FILE" 2>/dev/null
 }
 
-# ── System status (pretty) ────────────────────────────────────────────────
+# ── System status ──────────────────────────────────────────────────────────
 show_status() {
-    echo ""
-    echo "${ORANGE}╔════════════════════════════════════════════════════════╗${NC}"
-    echo "${ORANGE}║                                                        ║${NC}"
-    echo "${ORANGE}║        ${WHITE}${BOLD}SUNDY.HOST --- SYSTEM STATUS${ORANGE}                   ║${NC}"
-    echo "${ORANGE}║                                                        ║${NC}"
-    echo "${ORANGE}╠════════════════════════════════════════════════════════╣${NC}"
-    echo "${ORANGE}║                                                        ║${NC}"
+    P ""
+    P "${ORANGE}╔════════════════════════════════════════════════════════╗${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}║        ${WHITE}${BOLD}SUNDY.HOST --- SYSTEM STATUS${NC}${ORANGE}                   ║${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}╠════════════════════════════════════════════════════════╣${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
 
     # OS
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         OS_NAME="$PRETTY_NAME"
     else
-        OS_NAME=$(uname -o 2>/dev/null || echo "Linux")
+        OS_NAME=$(uname -o 2>/dev/null || printf 'Linux')
     fi
-    echo "${ORANGE}║  ${AMBER}OS${NC}         $OS_NAME${NC}"
+    P "${ORANGE}║  ${AMBER}OS${NC}         ${OS_NAME}${NC}"
 
     # Arch
-    echo "${ORANGE}║  ${AMBER}Arch${NC}       $(uname -m)"
+    P "${ORANGE}║  ${AMBER}Arch${NC}       $(uname -m)"
 
     # Uptime
     if [ -f /proc/uptime ]; then
@@ -90,18 +89,18 @@ show_status() {
             hours=$(( (raw % 86400) / 3600 ))
             mins=$(( (raw % 3600) / 60 ))
             if [ "$days" -gt 0 ]; then
-                echo "${ORANGE}║  ${AMBER}Uptime${NC}     ${days}d ${hours}h ${mins}m"
+                P "${ORANGE}║  ${AMBER}Uptime${NC}     ${days}d ${hours}h ${mins}m"
             elif [ "$hours" -gt 0 ]; then
-                echo "${ORANGE}║  ${AMBER}Uptime${NC}     ${hours}h ${mins}m"
+                P "${ORANGE}║  ${AMBER}Uptime${NC}     ${hours}h ${mins}m"
             else
-                echo "${ORANGE}║  ${AMBER}Uptime${NC}     ${mins}m"
+                P "${ORANGE}║  ${AMBER}Uptime${NC}     ${mins}m"
             fi
         fi
     fi
 
-    echo "${ORANGE}║                                                        ║${NC}"
-    echo "${ORANGE}╠════════════════════════════════════════════════════════╣${NC}"
-    echo "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}╠════════════════════════════════════════════════════════╣${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
 
     # Memory
     if [ -f /proc/meminfo ]; then
@@ -116,73 +115,72 @@ show_status() {
             else
                 mem_pct=0
             fi
-            # Progress bar
             bar_len=20
             filled=$((mem_pct * bar_len / 100))
             empty=$((bar_len - filled))
             bar=""
             i=0; while [ $i -lt $filled ]; do bar="${bar}#"; i=$((i+1)); done
             i=0; while [ $i -lt $empty ]; do bar="${bar}-"; i=$((i+1)); done
-            echo "${ORANGE}║  ${AMBER}RAM${NC}        [${GREEN}${bar}${NC}] ${mem_used_mb}/${mem_total_mb} MB (${mem_pct}%%)"
+            P "${ORANGE}║  ${AMBER}RAM${NC}        [${GREEN}${bar}${NC}] ${mem_used_mb}/${mem_total_mb} MB (${mem_pct}%)"
         fi
     fi
 
     # Disk
     disk_info=$(df -h / 2>/dev/null | tail -1)
     if [ -n "$disk_info" ]; then
-        disk_used=$(echo "$disk_info" | awk '{print $3}')
-        disk_total=$(echo "$disk_info" | awk '{print $2}')
-        disk_pct=$(echo "$disk_info" | awk '{print $5}' | tr -d '%')
+        disk_used=$(printf '%s' "$disk_info" | awk '{print $3}')
+        disk_total=$(printf '%s' "$disk_info" | awk '{print $2}')
+        disk_pct=$(printf '%s' "$disk_info" | awk '{print $5}' | tr -d '%')
         bar_len=20
         filled=$((disk_pct * bar_len / 100))
         empty=$((bar_len - filled))
         bar=""
         i=0; while [ $i -lt $filled ]; do bar="${bar}#"; i=$((i+1)); done
         i=0; while [ $i -lt $empty ]; do bar="${bar}-"; i=$((i+1)); done
-        echo "${ORANGE}║  ${AMBER}Disk${NC}       [${GREEN}${bar}${NC}] ${disk_used}/${disk_total} (${disk_pct}%%)"
+        P "${ORANGE}║  ${AMBER}Disk${NC}       [${GREEN}${bar}${NC}] ${disk_used}/${disk_total} (${disk_pct}%)"
     fi
 
     # CPU load
     if [ -f /proc/loadavg ]; then
         load=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)
-        echo "${ORANGE}║  ${AMBER}Load${NC}       $load"
+        P "${ORANGE}║  ${AMBER}Load${NC}       ${load}"
     fi
 
     # Process count
     if [ -d /proc ]; then
         proc_count=$(ls -d /proc/[0-9]* 2>/dev/null | wc -l)
-        echo "${ORANGE}║  ${AMBER}Processes${NC}  $proc_count running"
+        P "${ORANGE}║  ${AMBER}Procs${NC}      ${proc_count} running"
     fi
 
-    echo "${ORANGE}║                                                        ║${NC}"
-    echo "${ORANGE}╚════════════════════════════════════════════════════════╝${NC}"
-    echo ""
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}╚════════════════════════════════════════════════════════╝${NC}"
+    P ""
 }
 
 # ── Ports ──────────────────────────────────────────────────────────────────
 show_ports() {
-    echo ""
-    echo "${ORANGE}╔════════════════════════════════════════════════════════╗${NC}"
-    echo "${ORANGE}║                                                        ║${NC}"
-    echo "${ORANGE}║        ${WHITE}${BOLD}SUNDY.HOST --- PORTS (30000-35000)${ORANGE}             ║${NC}"
-    echo "${ORANGE}║                                                        ║${NC}"
-    echo "${ORANGE}╠════════════════════════════════════════════════════════╣${NC}"
-    echo "${ORANGE}║                                                        ║${NC}"
+    P ""
+    P "${ORANGE}╔════════════════════════════════════════════════════════╗${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}║        ${WHITE}${BOLD}SUNDY.HOST --- PORTS (30000-35000)${NC}${ORANGE}             ║${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}╠════════════════════════════════════════════════════════╣${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
 
     config_file="$HOME/vps.config"
     port_found=0
     if [ -f "$config_file" ]; then
         while IFS='=' read -r key value; do
-            key=$(echo "$key" | tr -d '[:space:]')
-            value=$(echo "$value" | tr -d '[:space:]')
+            key=$(printf '%s' "$key" | tr -d '[:space:]')
+            value=$(printf '%s' "$value" | tr -d '[:space:]')
             case "$key" in ""|"#"*) continue ;; esac
             case "$key" in
                 internalip)
-                    echo "${ORANGE}║  ${AMBER}IP${NC}    $value${NC}"
+                    P "${ORANGE}║  ${AMBER}IP${NC}    ${value}"
                 ;;
                 port|port[0-9]*)
                     if [ -n "$value" ]; then
-                        echo "${ORANGE}║  ${GREEN}+${NC}     $key = $value"
+                        P "${ORANGE}║  ${GREEN}+${NC}     ${key} = ${value}"
                         port_found=1
                     fi
                 ;;
@@ -191,19 +189,19 @@ show_ports() {
     fi
 
     if [ "$port_found" -eq 0 ]; then
-        echo "${ORANGE}║  ${DIM}No additional ports. Add in Startup tab.${ORANGE}            ║${NC}"
+        P "${ORANGE}║  ${DIM}No additional ports. Add in Startup tab.${NC}${ORANGE}            ║${NC}"
     fi
 
-    echo "${ORANGE}║                                                        ║${NC}"
-    echo "${ORANGE}╚════════════════════════════════════════════════════════╝${NC}"
-    echo ""
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}╚════════════════════════════════════════════════════════╝${NC}"
+    P ""
 }
 
 # ── Reinstall ──────────────────────────────────────────────────────────────
 do_reinstall() {
-    echo ""
-    echo "${RED}${BOLD}WARNING: This will erase ALL data!${NC}"
-    printf "${AMBER}Confirm? (yes/no): ${NC}"
+    P ""
+    P "${RED}${BOLD}WARNING: This will erase ALL data!${NC}"
+    printf '%b' "${AMBER}Confirm? (yes/no): ${NC}"
     read -r confirm
     if [ "$confirm" = "yes" ] || [ "$confirm" = "y" ]; then
         log "INFO" "Wiping data..." "$ORANGE"
@@ -230,7 +228,7 @@ do_backup() {
         . ) >/dev/null 2>&1
     if [ -f "$backup_file" ]; then
         size=$(du -h "$backup_file" | cut -f1)
-        log "SUCCESS" "Backup: $backup_file ($size)" "$GREEN"
+        log "SUCCESS" "Backup: ${backup_file} (${size})" "$GREEN"
     else
         log "ERROR" "Backup failed." "$RED"
     fi
@@ -242,34 +240,31 @@ do_restore() {
         log "INFO" "Usage: restore <filename>" "$AMBER"
         ls /backup_*.tar.gz 2>/dev/null | while read -r f; do
             size=$(du -h "$f" | cut -f1)
-            echo "  ${ORANGE}+${NC} $(basename "$f") ($size)"
+            P "  ${ORANGE}+${NC} $(basename "$f") (${size})"
         done
         return
     fi
     if [ -f "/$file" ]; then
         log "INFO" "Restoring..." "$ORANGE"
         tar --numeric-owner -xzf "/$file" -C / --exclude="$file" >/dev/null 2>&1
-        log "SUCCESS" "Restored from $file" "$GREEN"
+        log "SUCCESS" "Restored from ${file}" "$GREEN"
     else
-        log "ERROR" "File not found: $file" "$RED"
+        log "ERROR" "File not found: ${file}" "$RED"
     fi
 }
 
 # ── Interactive program wrappers ───────────────────────────────────────────
-# Programs that use ncurses don't work in Pterodactyl console.
-# Run them in batch/one-shot mode instead.
 wrap_interactive() {
     prog="$1"
     shift
     case "$prog" in
         top)
-            # Batch mode, single snapshot
             top -b -n 1 "$@" 2>/dev/null | head -30
             return 0
         ;;
         htop|btop|nload|iftop|bmon|nethogs|glances)
-            log "INFO" "Cannot run $prog in Pterodactyl console." "$AMBER"
-            log "INFO" "Use 'status' for system info instead." "$AMBER"
+            log "INFO" "${prog} is not supported in Pterodactyl console." "$AMBER"
+            log "INFO" "Use 'status' for system info." "$AMBER"
             return 0
         ;;
     esac
@@ -283,12 +278,11 @@ execute() {
 
     save_history "$cmd"
 
-    # Extract first word
-    prog=$(echo "$cmd" | awk '{print $1}')
-    args=$(echo "$cmd" | cut -d' ' -f2- -s)
+    prog=$(printf '%s' "$cmd" | awk '{print $1}')
+    args=$(printf '%s' "$cmd" | cut -d' ' -f2- -s)
 
     case "$prog" in
-        clear|cls)    echo "\033c" ;;
+        clear|cls)    printf '\033c' ;;
         exit)         cleanup ;;
         stop)
             interrupt_child
@@ -303,10 +297,10 @@ execute() {
         restore)      do_restore "$args" ;;
         history)
             if [ -f "$HISTORY_FILE" ]; then
-                echo ""
-                echo "${AMBER}Recent commands:${NC}"
+                P ""
+                P "${AMBER}Recent commands:${NC}"
                 tail -20 "$HISTORY_FILE" | nl -ba
-                echo ""
+                P ""
             fi
         ;;
         sudo|su)
@@ -316,7 +310,6 @@ execute() {
             wrap_interactive "$prog" $args
         ;;
         *)
-            # Run with signal handling
             eval "$cmd" &
             CHILD_PID=$!
             wait $CHILD_PID 2>/dev/null
@@ -331,18 +324,16 @@ execute() {
 
 touch "$HISTORY_FILE" 2>/dev/null
 
-echo "\033c"
-echo "${ORANGE}${BOLD}Starting Sundy.Host VPS...${NC}"
+printf '\033c'
+P "${ORANGE}${BOLD}Starting Sundy.Host VPS...${NC}"
 sleep 1
-echo "\033c"
+printf '\033c'
 
 print_main_banner
 log "INFO" "Type 'help' for commands." "$AMBER"
 
-# Run autorun
 sh "/autorun.sh" 2>/dev/null
 
-# Main loop
 while true; do
     show_prompt
     read -r cmd || break

@@ -19,12 +19,14 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
+# Safe print: interprets \033 escapes but ignores printf % directives
+P() {
+    printf '%b\n' "$1"
+}
+
 # ── Logger ──────────────────────────────────────────────────────────────────
 log() {
-    level="$1"
-    message="$2"
-    color="${3:-$NC}"
-    echo "${color}[${level}]${NC} ${message}"
+    P "${3:-$NC}[$1]${NC} $2"
 }
 
 # ── Architecture ────────────────────────────────────────────────────────────
@@ -40,52 +42,52 @@ detect_architecture() {
 # ── Main banner ─────────────────────────────────────────────────────────────
 print_main_banner() {
     YEAR=$(date +%Y)
-    echo "\033c"
-    echo "${ORANGE}╔════════════════════════════════════════════════════════╗${NC}"
-    echo "${ORANGE}║                                                        ║${NC}"
-    echo "${ORANGE}║   ${LIGHT_ORANGE}${BOLD}███████╗██╗   ██╗███╗   ██╗██████╗ ██╗   ██╗${ORANGE}   ║${NC}"
-    echo "${ORANGE}║   ${LIGHT_ORANGE}${BOLD}██╔════╝██║   ██║████╗  ██║██╔══██╗╚██╗ ██╔╝${ORANGE}   ║${NC}"
-    echo "${ORANGE}║   ${LIGHT_ORANGE}${BOLD}███████╗██║   ██║██╔██╗ ██║██║  ██║ ╚████╔╝ ${ORANGE}   ║${NC}"
-    echo "${ORANGE}║   ${LIGHT_ORANGE}${BOLD}╚════██║██║   ██║██║╚██╗██║██║  ██║  ╚██╔╝  ${ORANGE}   ║${NC}"
-    echo "${ORANGE}║   ${LIGHT_ORANGE}${BOLD}███████║╚██████╔╝██║ ╚████║██████╔╝   ██║   ${ORANGE}   ║${NC}"
-    echo "${ORANGE}║   ${LIGHT_ORANGE}${BOLD}╚══════╝ ╚═════╝ ╚═╝  ╚═══╝╚═════╝    ╚═╝   ${ORANGE}   ║${NC}"
-    echo "${ORANGE}║                                                        ║${NC}"
-    echo "${ORANGE}║          ${AMBER}${BOLD}Sundy.Host  ---  VPS Panel${ORANGE}                  ║${NC}"
-    echo "${ORANGE}║                                                        ║${NC}"
-    echo "${ORANGE}║      ${PEACH}Secure - Fast - Protected - Reliable${ORANGE}            ║${NC}"
-    echo "${ORANGE}║                                                        ║${NC}"
-    echo "${ORANGE}║            ${DIM}(c) ${YEAR} Sundy.Host${ORANGE}                        ║${NC}"
-    echo "${ORANGE}║                                                        ║${NC}"
-    echo "${ORANGE}╚════════════════════════════════════════════════════════╝${NC}"
-    echo ""
+    printf '\033c'
+    P "${ORANGE}╔════════════════════════════════════════════════════════╗${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}║   ${LIGHT_ORANGE}${BOLD}███████╗██╗   ██╗███╗   ██╗██████╗ ██╗   ██╗${NC}${ORANGE}   ║${NC}"
+    P "${ORANGE}║   ${LIGHT_ORANGE}${BOLD}██╔════╝██║   ██║████╗  ██║██╔══██╗╚██╗ ██╔╝${NC}${ORANGE}   ║${NC}"
+    P "${ORANGE}║   ${LIGHT_ORANGE}${BOLD}███████╗██║   ██║██╔██╗ ██║██║  ██║ ╚████╔╝ ${NC}${ORANGE}   ║${NC}"
+    P "${ORANGE}║   ${LIGHT_ORANGE}${BOLD}╚════██║██║   ██║██║╚██╗██║██║  ██║  ╚██╔╝  ${NC}${ORANGE}   ║${NC}"
+    P "${ORANGE}║   ${LIGHT_ORANGE}${BOLD}███████║╚██████╔╝██║ ╚████║██████╔╝   ██║   ${NC}${ORANGE}   ║${NC}"
+    P "${ORANGE}║   ${LIGHT_ORANGE}${BOLD}╚══════╝ ╚═════╝ ╚═╝  ╚═══╝╚═════╝    ╚═╝   ${NC}${ORANGE}   ║${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}║          ${AMBER}${BOLD}Sundy.Host  ---  VPS Panel${NC}${ORANGE}                  ║${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}║      ${PEACH}Secure - Fast - Protected - Reliable${NC}${ORANGE}            ║${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}║            ${DIM}(c) ${YEAR} Sundy.Host${NC}${ORANGE}                        ║${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}╚════════════════════════════════════════════════════════╝${NC}"
+    P ""
 }
 
 # ── Help banner ─────────────────────────────────────────────────────────────
 print_help_banner() {
-    echo ""
-    echo "${DARK_ORANGE}╔════════════════════════════════════════════════════════╗${NC}"
-    echo "${DARK_ORANGE}║                                                        ║${NC}"
-    echo "${DARK_ORANGE}║       ${WHITE}${BOLD}SUNDY.HOST --- AVAILABLE COMMANDS${DARK_ORANGE}               ║${NC}"
-    echo "${DARK_ORANGE}║                                                        ║${NC}"
-    echo "${DARK_ORANGE}╠════════════════════════════════════════════════════════╣${NC}"
-    echo "${DARK_ORANGE}║                                                        ║${NC}"
-    echo "${DARK_ORANGE}║  ${AMBER}${BOLD}help${NC}             ${ORANGE}>${NC}  Show this help message${DARK_ORANGE}         ║${NC}"
-    echo "${DARK_ORANGE}║  ${AMBER}${BOLD}status${NC}           ${ORANGE}>${NC}  System status (CPU/RAM/Disk)${DARK_ORANGE}    ║${NC}"
-    echo "${DARK_ORANGE}║  ${AMBER}${BOLD}ports${NC}            ${ORANGE}>${NC}  Show configured ports${DARK_ORANGE}           ║${NC}"
-    echo "${DARK_ORANGE}║  ${AMBER}${BOLD}firewall${NC}         ${ORANGE}>${NC}  Firewall & protection status${DARK_ORANGE}    ║${NC}"
-    echo "${DARK_ORANGE}║  ${AMBER}${BOLD}reinstall${NC}        ${ORANGE}>${NC}  Reinstall operating system${DARK_ORANGE}      ║${NC}"
-    echo "${DARK_ORANGE}║  ${AMBER}${BOLD}backup${NC}           ${ORANGE}>${NC}  Create system backup${DARK_ORANGE}            ║${NC}"
-    echo "${DARK_ORANGE}║  ${AMBER}${BOLD}restore <file>${NC}   ${ORANGE}>${NC}  Restore from backup${DARK_ORANGE}             ║${NC}"
-    echo "${DARK_ORANGE}║  ${AMBER}${BOLD}history${NC}          ${ORANGE}>${NC}  Show command history${DARK_ORANGE}            ║${NC}"
-    echo "${DARK_ORANGE}║  ${AMBER}${BOLD}clear / cls${NC}      ${ORANGE}>${NC}  Clear terminal${DARK_ORANGE}                  ║${NC}"
-    echo "${DARK_ORANGE}║  ${AMBER}${BOLD}stop${NC}             ${ORANGE}>${NC}  Stop current process (Ctrl+C)${DARK_ORANGE}   ║${NC}"
-    echo "${DARK_ORANGE}║  ${AMBER}${BOLD}exit${NC}             ${ORANGE}>${NC}  Shutdown server${DARK_ORANGE}                 ║${NC}"
-    echo "${DARK_ORANGE}║                                                        ║${NC}"
-    echo "${DARK_ORANGE}╠════════════════════════════════════════════════════════╣${NC}"
-    echo "${DARK_ORANGE}║                                                        ║${NC}"
-    echo "${DARK_ORANGE}║  ${DIM}All standard Linux commands work as expected.${DARK_ORANGE}       ║${NC}"
-    echo "${DARK_ORANGE}║  ${DIM}Ports: 30000-35000 only. Bandwidth: 100 Mbit/s.${DARK_ORANGE}     ║${NC}"
-    echo "${DARK_ORANGE}║                                                        ║${NC}"
-    echo "${DARK_ORANGE}╚════════════════════════════════════════════════════════╝${NC}"
-    echo ""
+    P ""
+    P "${DARK_ORANGE}╔════════════════════════════════════════════════════════╗${NC}"
+    P "${DARK_ORANGE}║                                                        ║${NC}"
+    P "${DARK_ORANGE}║       ${WHITE}${BOLD}SUNDY.HOST --- AVAILABLE COMMANDS${NC}${DARK_ORANGE}               ║${NC}"
+    P "${DARK_ORANGE}║                                                        ║${NC}"
+    P "${DARK_ORANGE}╠════════════════════════════════════════════════════════╣${NC}"
+    P "${DARK_ORANGE}║                                                        ║${NC}"
+    P "${DARK_ORANGE}║  ${AMBER}${BOLD}help${NC}             ${ORANGE}>${NC}  Show this help message${DARK_ORANGE}         ║${NC}"
+    P "${DARK_ORANGE}║  ${AMBER}${BOLD}status${NC}           ${ORANGE}>${NC}  System status (CPU/RAM/Disk)${DARK_ORANGE}    ║${NC}"
+    P "${DARK_ORANGE}║  ${AMBER}${BOLD}ports${NC}            ${ORANGE}>${NC}  Show configured ports${DARK_ORANGE}           ║${NC}"
+    P "${DARK_ORANGE}║  ${AMBER}${BOLD}firewall${NC}         ${ORANGE}>${NC}  Firewall & protection status${DARK_ORANGE}    ║${NC}"
+    P "${DARK_ORANGE}║  ${AMBER}${BOLD}reinstall${NC}        ${ORANGE}>${NC}  Reinstall operating system${DARK_ORANGE}      ║${NC}"
+    P "${DARK_ORANGE}║  ${AMBER}${BOLD}backup${NC}           ${ORANGE}>${NC}  Create system backup${DARK_ORANGE}            ║${NC}"
+    P "${DARK_ORANGE}║  ${AMBER}${BOLD}restore <file>${NC}   ${ORANGE}>${NC}  Restore from backup${DARK_ORANGE}             ║${NC}"
+    P "${DARK_ORANGE}║  ${AMBER}${BOLD}history${NC}          ${ORANGE}>${NC}  Show command history${DARK_ORANGE}            ║${NC}"
+    P "${DARK_ORANGE}║  ${AMBER}${BOLD}clear / cls${NC}      ${ORANGE}>${NC}  Clear terminal${DARK_ORANGE}                  ║${NC}"
+    P "${DARK_ORANGE}║  ${AMBER}${BOLD}stop${NC}             ${ORANGE}>${NC}  Stop current process (Ctrl+C)${DARK_ORANGE}   ║${NC}"
+    P "${DARK_ORANGE}║  ${AMBER}${BOLD}exit${NC}             ${ORANGE}>${NC}  Shutdown server${DARK_ORANGE}                 ║${NC}"
+    P "${DARK_ORANGE}║                                                        ║${NC}"
+    P "${DARK_ORANGE}╠════════════════════════════════════════════════════════╣${NC}"
+    P "${DARK_ORANGE}║                                                        ║${NC}"
+    P "${DARK_ORANGE}║  ${DIM}All standard Linux commands work as expected.${NC}${DARK_ORANGE}       ║${NC}"
+    P "${DARK_ORANGE}║  ${DIM}Ports: 30000-35000 only. Bandwidth: 100 Mbit/s.${NC}${DARK_ORANGE}     ║${NC}"
+    P "${DARK_ORANGE}║                                                        ║${NC}"
+    P "${DARK_ORANGE}╚════════════════════════════════════════════════════════╝${NC}"
+    P ""
 }
