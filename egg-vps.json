@@ -1,0 +1,222 @@
+{
+    "_comment": "Sundy.Host VPS Egg — DO NOT EDIT MANUALLY",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-03-17T00:00:00+00:00",
+    "name": "Sundy.Host VPS",
+    "author": "admin@sundy.host",
+    "description": "Sundy.Host — Secure VPS with OS selection, DDoS protection (Sundy.Shield), bandwidth limiting, and full terminal access.\r\nGitHub: https://github.com/SundyHost/pterodactyl-vps-egg",
+    "features": null,
+    "docker_images": {
+        "Sundy.Host VPS": "ghcr.io/sundyhost/pterodactyl-vps:latest"
+    },
+    "file_denylist": [],
+    "startup": "./run.sh",
+    "config": {
+        "files": "{\r\n    \"vps.config\": {\r\n        \"parser\": \"properties\",\r\n        \"find\": {\r\n            \"internalip\": \"{{server.build.default.ip}}\",\r\n            \"port\": \"{{server.build.default.port}}\",\r\n            \"port2\": \"{{server.build.env.port2}}\",\r\n            \"port3\": \"{{server.build.env.port3}}\",\r\n            \"port4\": \"{{server.build.env.port4}}\",\r\n            \"port5\": \"{{server.build.env.port5}}\",\r\n            \"port6\": \"{{server.build.env.port6}}\",\r\n            \"port7\": \"{{server.build.env.port7}}\",\r\n            \"port8\": \"{{server.build.env.port8}}\",\r\n            \"port9\": \"{{server.build.env.port9}}\",\r\n            \"port10\": \"{{server.build.env.port10}}\",\r\n            \"port11\": \"{{server.build.env.port11}}\",\r\n            \"port12\": \"{{server.build.env.port12}}\",\r\n            \"port13\": \"{{server.build.env.port13}}\",\r\n            \"port14\": \"{{server.build.env.port14}}\",\r\n            \"port15\": \"{{server.build.env.port15}}\",\r\n            \"port16\": \"{{server.build.env.port16}}\",\r\n            \"port17\": \"{{server.build.env.port17}}\",\r\n            \"port18\": \"{{server.build.env.port18}}\",\r\n            \"port19\": \"{{server.build.env.port19}}\",\r\n            \"port20\": \"{{server.build.env.port20}}\"\r\n        }\r\n    }\r\n}",
+        "startup": "{\r\n    \"done\": \"Starting\"\r\n}",
+        "logs": "{}",
+        "stop": "exit"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\r\n\r\ncd /mnt/server/",
+            "container": "ghcr.io/sundyhost/pterodactyl-vps:latest",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "PORT 2",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port2",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 3",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port3",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 4",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port4",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 5",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port5",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 6",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port6",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 7",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port7",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 8",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port8",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 9",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port9",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 10",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port10",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 11",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port11",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 12",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port12",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 13",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port13",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 14",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port14",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 15",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port15",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 16",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port16",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 17",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port17",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 18",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port18",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 19",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port19",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        },
+        {
+            "name": "PORT 20",
+            "description": "Port from range 30000-35000",
+            "env_variable": "port20",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:5",
+            "field_type": "text"
+        }
+    ]
+}
