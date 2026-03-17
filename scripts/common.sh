@@ -50,7 +50,7 @@ print_main_banner() {
     P "${ORANGE}║                                                                ║${NC}"
     P "${ORANGE}║          ${AMBER}${BOLD}Sundy.Host  ---  Secure VPS Environment${NC}${ORANGE}              ║${NC}"
     P "${ORANGE}║                                                                ║${NC}"
-    P "${ORANGE}║            ${DIM}(c) ${YEAR} Sundy.Host. All rights reserved.${NC}${ORANGE}              ║${NC}"
+    P "${ORANGE}║            ${DIM}(c) ${YEAR} Sundy.Host. All rights reserved.${NC}${ORANGE}           ║${NC}"
     P "${ORANGE}║                                                                ║${NC}"
     P "${ORANGE}╚════════════════════════════════════════════════════════════════╝${NC}"
     P ""
