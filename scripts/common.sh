@@ -67,7 +67,6 @@ print_help_banner() {
     P "${DARK_ORANGE}║  ${AMBER}${BOLD}help${NC}             ${ORANGE}>${NC}  Show this help message${DARK_ORANGE}                  ║${NC}"
     P "${DARK_ORANGE}║  ${AMBER}${BOLD}status${NC}           ${ORANGE}>${NC}  System status (Neofetch style)${DARK_ORANGE}          ║${NC}"
     P "${DARK_ORANGE}║  ${AMBER}${BOLD}portcheck${NC}        ${ORANGE}>${NC}  Check what is using your ports${DARK_ORANGE}          ║${NC}"
-    P "${DARK_ORANGE}║  ${AMBER}${BOLD}ssh${NC}              ${ORANGE}>${NC}  Setup SSH access to this VPS${DARK_ORANGE}            ║${NC}"
     P "${DARK_ORANGE}║  ${AMBER}${BOLD}ports${NC}            ${ORANGE}>${NC}  Show your allocated ports${DARK_ORANGE}               ║${NC}"
     P "${DARK_ORANGE}║  ${AMBER}${BOLD}firewall${NC}         ${ORANGE}>${NC}  Sundy.Shield protection status${DARK_ORANGE}          ║${NC}"
     P "${DARK_ORANGE}║  ${AMBER}${BOLD}reinstall${NC}        ${ORANGE}>${NC}  Reinstall operating system${DARK_ORANGE}              ║${NC}"
