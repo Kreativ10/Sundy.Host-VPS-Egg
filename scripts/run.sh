@@ -122,20 +122,20 @@ show_ports() {
     port_found=0
     if [ -f "$config_file" ]; then
         while IFS='=' read -r key value; do
-            key=$(printf '%s' "$key" | tr -d '[:space:]')
+            key=$(printf '%s' "$key" | tr -d '[:space:]' | tr '[A-Z]' '[a-z]')
             value=$(printf '%s' "$value" | tr -d '[:space:]')
             case "$key" in ""|"#"*) continue ;; esac
-            case "$key" in
-                internalip)
-                    P "${ORANGE}║  ${AMBER}Internal IP:${NC} $value$(printf '%*s' $((46 - ${#value})) '') ${ORANGE}║${NC}"
-                ;;
-                port|port[0-9]*)
-                    if [ -n "$value" ]; then
-                        P "${ORANGE}║     ${GREEN}+${NC} Allocated Port = ${BOLD}${value}${NC}$(printf '%*s' $((39 - ${#value})) '') ${ORANGE}║${NC}"
-                        port_found=1
-                    fi
-                ;;
-            esac
+            
+            if [ "$key" = "internalip" ] || [ "$key" = "internal_ip" ] || [ "$key" = "serverip" ]; then
+                P "${ORANGE}║  ${AMBER}Internal IP:${NC} $value$(printf '%*s' $((46 - ${#value})) '') ${ORANGE}║${NC}"
+            fi
+            
+            if echo "$key" | grep -q "port"; then
+                if [ -n "$value" ]; then
+                    P "${ORANGE}║     ${GREEN}+${NC} Allocated Port = ${BOLD}${value}${NC}$(printf '%*s' $((39 - ${#value})) '') ${ORANGE}║${NC}"
+                    port_found=1
+                fi
+            fi
         done < "$config_file"
     fi
 
@@ -183,38 +183,48 @@ do_ssh() {
     
     if [ -f "$config_file" ]; then
         while IFS='=' read -r key value; do
-            key=$(printf '%s' "$key" | tr -d '[:space:]')
+            key=$(printf '%s' "$key" | tr -d '[:space:]' | tr '[A-Z]' '[a-z]')
             value=$(printf '%s' "$value" | tr -d '[:space:]')
             case "$key" in ""|"#"*) continue ;; esac
-            if [ "$key" = "internalip" ]; then IP_ADDRESS="$value"; fi
-            case "$key" in
-                port|port[0-9]*)
-                    if [ -n "$value" ]; then
-                        AVAILABLE_PORTS="$AVAILABLE_PORTS $value"
-                    fi
-                ;;
-            esac
+            
+            if [ "$key" = "internalip" ] || [ "$key" = "internal_ip" ] || [ "$key" = "serverip" ]; then 
+                IP_ADDRESS="$value"
+            fi
+            
+            if echo "$key" | grep -q "port"; then
+                if [ -n "$value" ]; then
+                    AVAILABLE_PORTS="$AVAILABLE_PORTS $value"
+                fi
+            fi
         done < "$config_file"
     fi
+    
+    # Clean up duplicate ports dynamically
+    AVAILABLE_PORTS=$(echo "$AVAILABLE_PORTS" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/^ //;s/ $//')
 
     if [ -z "$AVAILABLE_PORTS" ] || [ "$AVAILABLE_PORTS" = " " ]; then
-        P "${RED}Error: You do not have any allocated ports!${NC}"
-        P "Add additional ports in the 'Startup' tab of the panel."
-        return
-    fi
-    
-    P "Available ports:${GREEN}${AVAILABLE_PORTS}${NC}"
-    printf '%b' "${AMBER}Select a port for SSH: ${NC}"
-    read -r SSPORT
-    
-    # Verify exact match
-    valid_port=0
-    for p in $AVAILABLE_PORTS; do
-        if [ "$p" = "$SSPORT" ]; then valid_port=1; break; fi
-    done
-    if [ "$valid_port" -eq 0 ]; then
-        P "${RED}Error: Port ${SSPORT} is not allocated to you.${NC}"
-        return
+        P "${AMBER}Warning: Could not detect additional ports in vps.config.${NC}"
+        printf '%b' "${AMBER}Enter the main port assigned to this server manually (e.g., 30000): ${NC}"
+        read -r SSPORT
+        if [ -z "$SSPORT" ]; then
+             P "${RED}Port cannot be empty!${NC}"
+             return
+        fi
+        AVAILABLE_PORTS="$SSPORT"
+    else
+        P "Available ports:${GREEN} ${AVAILABLE_PORTS}${NC}"
+        printf '%b' "${AMBER}Select a port for SSH: ${NC}"
+        read -r SSPORT
+        
+        # Verify exact match
+        valid_port=0
+        for p in $AVAILABLE_PORTS; do
+            if [ "$p" = "$SSPORT" ]; then valid_port=1; break; fi
+        done
+        if [ "$valid_port" -eq 0 ]; then
+            P "${RED}Error: Port ${SSPORT} is not allocated to you.${NC}"
+            return
+        fi
     fi
     
     printf '%b' "${AMBER}Enter new SSH username (e.g., root): ${NC}"
