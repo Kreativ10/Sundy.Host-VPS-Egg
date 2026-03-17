@@ -1,28 +1,28 @@
 #!/bin/sh
 # ============================================================================
-#  entrypoint.sh — Container entrypoint (first boot → install, else → run)
+#  entrypoint.sh — Sundy.Host VPS | Container entrypoint
+#  Runs as ROOT to apply firewall, then launches PRoot as container user
 # ============================================================================
 
-# Wait for container to be ready
 sleep 2
 
 cd /home/container
 
-# Make internal Docker IP available
+# Make internal IP available
 export INTERNAL_IP=$(ip route get 1 2>/dev/null | awk '{print $(NF-2); exit}')
 
-# Parse startup command (replace {{VAR}} → ${VAR})
+# Parse startup command
 MODIFIED_STARTUP=$(eval echo $(echo ${STARTUP} | sed -e 's/{{/${/g' -e 's/}}/}/g'))
 
-# First boot: run installer via PRoot
-if [ ! -e "$HOME/.installed" ]; then
+# First boot: install OS
+if [ ! -e "/home/container/.installed" ]; then
     /usr/local/bin/proot \
-    --rootfs="/" \
-    -0 -w "/root" \
-    -b /dev -b /sys -b /proc \
-    --kill-on-exit \
-    /bin/sh "/install.sh" || exit 1
+        --rootfs="/" \
+        -0 -w "/root" \
+        -b /dev -b /sys -b /proc \
+        --kill-on-exit \
+        /bin/sh "/install.sh" || exit 1
 fi
 
-# Normal boot: run helper (which launches PRoot → run.sh)
+# Normal boot: apply firewall (as root!) then run VPS
 sh /helper.sh

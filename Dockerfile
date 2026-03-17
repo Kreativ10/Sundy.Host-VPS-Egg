@@ -29,23 +29,25 @@ RUN ARCH=$(uname -m) && \
     curl -Ls "$proot_url" -o /usr/local/bin/proot && \
     chmod 755 /usr/local/bin/proot
 
-# Create non-root user
+# Create non-root user for PRoot
 RUN adduser -D -h /home/container -s /bin/sh container
 
-USER container
+# Set environment
 ENV USER=container
 ENV HOME=/home/container
-
 WORKDIR /home/container
 
-# Copy scripts
-COPY --chown=container:container ./scripts/entrypoint.sh /entrypoint.sh
-COPY --chown=container:container ./scripts/install.sh /install.sh
-COPY --chown=container:container ./scripts/helper.sh /helper.sh
-COPY --chown=container:container ./scripts/run.sh /run.sh
-COPY --chown=container:container ./scripts/common.sh /common.sh
-COPY --chown=container:container ./scripts/firewall.sh /firewall.sh
+# Copy scripts (owned by root so firewall can run as root)
+COPY ./scripts/entrypoint.sh /entrypoint.sh
+COPY ./scripts/install.sh /install.sh
+COPY ./scripts/helper.sh /helper.sh
+COPY ./scripts/run.sh /run.sh
+COPY ./scripts/common.sh /common.sh
+COPY ./scripts/firewall.sh /firewall.sh
 
-RUN chmod +x /entrypoint.sh /install.sh /helper.sh /run.sh /common.sh /firewall.sh
+RUN chmod +x /entrypoint.sh /install.sh /helper.sh /run.sh /common.sh /firewall.sh && \
+    chown -R container:container /home/container
 
+# Run as ROOT so iptables/tc work with CAP_NET_ADMIN
+# PRoot handles user emulation inside the VPS
 CMD ["/bin/sh", "/entrypoint.sh"]
