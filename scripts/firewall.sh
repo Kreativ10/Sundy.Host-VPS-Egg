@@ -137,10 +137,18 @@ apply_firewall() {
 }
 
 show_firewall_status() {
+    fw_box_line() {
+        visible="$1"
+        rendered="$2"
+        pad=$((64 - ${#visible}))
+        [ "$pad" -lt 0 ] && pad=0
+        _P "${DARK_ORANGE}║${rendered}$(printf '%*s' "$pad" '')${DARK_ORANGE}║${NC}"
+    }
+
     _P ""
     _P "${DARK_ORANGE}╔════════════════════════════════════════════════════════════════╗${NC}"
     _P "${DARK_ORANGE}║                                                                ║${NC}"
-    _P "${DARK_ORANGE}║           ${WHITE}${BOLD}SUNDY.SHIELD --- FIREWALL STATUS${NC}${DARK_ORANGE}                     ║${NC}"
+    _P "${DARK_ORANGE}║                ${WHITE}${BOLD}SUNDY.SHIELD --- FIREWALL STATUS${NC}${DARK_ORANGE}                ║${NC}"
     _P "${DARK_ORANGE}║                                                                ║${NC}"
     _P "${DARK_ORANGE}╠════════════════════════════════════════════════════════════════╣${NC}"
     _P "${DARK_ORANGE}║                                                                ║${NC}"
@@ -148,9 +156,9 @@ show_firewall_status() {
     if [ "$FW_IPT_ACTIVE" = "1" ] && iptables -L VPS_PROTECT -n >/dev/null 2>&1; then
         _cr() {
             if iptables -L VPS_PROTECT -n 2>/dev/null | grep -qi "$2"; then
-                _P "${DARK_ORANGE}║    ${GREEN}+${NC} $1$(printf '%*s' $((42 - ${#1})) '') ${DARK_ORANGE}║${NC}"
+                fw_box_line "    + $1" "    ${GREEN}+${NC} $1"
             else
-                _P "${DARK_ORANGE}║    ${RED}-${NC} $1$(printf '%*s' $((42 - ${#1})) '') ${DARK_ORANGE}║${NC}"
+                fw_box_line "    - $1" "    ${RED}-${NC} $1"
             fi
         }
         _cr "Port range 30000-35000" "${PORT_RANGE_START}"
@@ -159,12 +167,12 @@ show_firewall_status() {
         _cr "ICMP flood protection" "icmp_flood"
         _cr "Port scan detection"   "SYN,RST"
         _cr "Amplification block"   "dpt:11211"
-        _cr "SMTP block (Anti-spam)""dpt:25"
+        _cr "SMTP block (Anti-spam)" "dpt:25"
         _cr "Connection limit"      "connlimit"
         _cr "Rate limit"            "new_conn"
         _cr "Invalid/bogon block"   "INVALID"
     else
-        _P "${DARK_ORANGE}║  ${RED}INACTIVE${NC}  iptables (Requires Wing NET_ADMIN)${DARK_ORANGE}                  ║${NC}"
+        fw_box_line "  INACTIVE  iptables (Requires Wing NET_ADMIN)" "  ${RED}INACTIVE${NC}  iptables (Requires Wing NET_ADMIN)"
     fi
 
     _P "${DARK_ORANGE}║                                                                ║${NC}"
@@ -172,9 +180,9 @@ show_firewall_status() {
     _P "${DARK_ORANGE}║                                                                ║${NC}"
 
     if [ "$FW_BW_ACTIVE" = "1" ]; then
-        _P "${DARK_ORANGE}║    ${GREEN}+${NC} Bandwidth limit: ${BANDWIDTH_LIMIT}${DARK_ORANGE}                                   ║${NC}"
+        fw_box_line "    + Bandwidth limit: ${BANDWIDTH_LIMIT}" "    ${GREEN}+${NC} Bandwidth limit: ${BANDWIDTH_LIMIT}"
     else
-        _P "${DARK_ORANGE}║  ${RED}INACTIVE${NC}  Bandwidth Limit (Requires Wing NET_ADMIN)${DARK_ORANGE}           ║${NC}"
+        fw_box_line "  INACTIVE  Bandwidth Limit (Requires Wing NET_ADMIN)" "  ${RED}INACTIVE${NC}  Bandwidth Limit (Requires Wing NET_ADMIN)"
     fi
 
     _P "${DARK_ORANGE}║                                                                ║${NC}"

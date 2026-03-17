@@ -127,24 +127,31 @@ show_status() {
 
 # ── Ports & Network ────────────────────────────────────────────────────────
 show_ports() {
+    box_line() {
+        visible="$1"
+        rendered="$2"
+        pad=$((64 - ${#visible}))
+        [ "$pad" -lt 0 ] && pad=0
+        P "${ORANGE}║${rendered}$(printf '%*s' "$pad" '')${ORANGE}║${NC}"
+    }
+
     P ""
     P "${ORANGE}╔════════════════════════════════════════════════════════════════╗${NC}"
     P "${ORANGE}║                                                                ║${NC}"
-    P "${ORANGE}║           ${WHITE}${BOLD}SUNDY.HOST --- PORTS (30000-35000)${NC}${ORANGE}                   ║${NC}"
+    P "${ORANGE}║               ${WHITE}${BOLD}SUNDY.HOST --- PORTS (30000-35000)${NC}${ORANGE}               ║${NC}"
     P "${ORANGE}║                                                                ║${NC}"
     P "${ORANGE}╠════════════════════════════════════════════════════════════════╣${NC}"
     P "${ORANGE}║                                                                ║${NC}"
 
-    P "${ORANGE}║  ${AMBER}Public IP:${NC} ${PUBLIC_IP:-N/A}"
-    P "${ORANGE}║${NC}"
+    box_line "  Public IP: ${PUBLIC_IP:-N/A}" "  ${AMBER}Public IP:${NC} ${PUBLIC_IP:-N/A}"
 
     found_ports=$(get_config_ports)
     if [ -n "$found_ports" ]; then
         for p in $found_ports; do
-            P "${ORANGE}║     ${GREEN}+${NC} Port ${BOLD}${p}${NC}"
+            box_line "     + Port ${p}" "     ${GREEN}+${NC} Port ${BOLD}${p}${NC}"
         done
     else
-        P "${ORANGE}║  ${DIM}No ports detected. Check vps.config or Panel > Startup tab.${NC}"
+        box_line "  No ports detected. Check vps.config or Panel > Startup tab." "  ${DIM}No ports detected. Check vps.config or Panel > Startup tab.${NC}"
     fi
 
     P "${ORANGE}║                                                                ║${NC}"
