@@ -1,15 +1,14 @@
 #!/bin/sh
 # ============================================================================
 #  run.sh — Sundy.Host VPS | Interactive shell
-#  Commands run in FOREGROUND so interactive tools (apt, etc) work.
-#  Use Ctrl+C or panel Stop button to interrupt running commands.
 # ============================================================================
 
 . /common.sh
 
-HOSTNAME="Sundy.Host"
+HOSTNAME="Sundy"
 HISTORY_FILE="${HOME}/.shell_history"
 MAX_HISTORY=500
+CHILD_PID=""
 
 # ── First boot setup ───────────────────────────────────────────────────────
 if [ ! -e "/.installed" ]; then
@@ -23,12 +22,21 @@ fi
 
 # ── Signal handling ────────────────────────────────────────────────────────
 cleanup() {
-    P ""
-    log "INFO" "Sundy.Host VPS session ended." "$ORANGE"
+    [ -n "$CHILD_PID" ] && kill -INT "$CHILD_PID" 2>/dev/null
+    log "INFO" "Session ended. Goodbye!" "$ORANGE"
     exit 0
 }
 
+interrupt_child() {
+    if [ -n "$CHILD_PID" ]; then
+        kill -INT "$CHILD_PID" 2>/dev/null
+        kill -TERM "$CHILD_PID" 2>/dev/null
+        CHILD_PID=""
+    fi
+}
+
 trap cleanup TERM
+trap interrupt_child INT
 
 # ── Prompt ─────────────────────────────────────────────────────────────────
 get_dir() {
@@ -51,141 +59,113 @@ save_history() {
     mv "$HISTORY_FILE.tmp" "$HISTORY_FILE" 2>/dev/null
 }
 
-# ── Neofetch-style status ─────────────────────────────────────────────────
+# ── System status ──────────────────────────────────────────────────────────
 show_status() {
-    # Gather info
+    P ""
+    P "${ORANGE}╔════════════════════════════════════════════════════════╗${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}║        ${WHITE}${BOLD}SUNDY.HOST --- SYSTEM STATUS${NC}${ORANGE}                   ║${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}╠════════════════════════════════════════════════════════╣${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+
+    # OS
     if [ -f /etc/os-release ]; then
         . /etc/os-release
-        os_name="$PRETTY_NAME"
+        OS_NAME="$PRETTY_NAME"
     else
-        os_name=$(uname -o 2>/dev/null || printf 'Linux')
+        OS_NAME=$(uname -o 2>/dev/null || printf 'Linux')
     fi
+    P "${ORANGE}║  ${AMBER}OS${NC}         ${OS_NAME}${NC}"
 
-    kernel=$(uname -r 2>/dev/null)
-    arch=$(uname -m 2>/dev/null)
-    hostname_val=$(hostname 2>/dev/null || printf 'Sundy.Host')
-    shell_val=$(basename "$SHELL" 2>/dev/null || printf 'sh')
+    # Arch
+    P "${ORANGE}║  ${AMBER}Arch${NC}       $(uname -m)"
 
     # Uptime
-    uptime_str="N/A"
     if [ -f /proc/uptime ]; then
         raw=$(cut -d. -f1 /proc/uptime 2>/dev/null)
         if [ -n "$raw" ]; then
-            d=$((raw / 86400))
-            h=$(( (raw % 86400) / 3600 ))
-            m=$(( (raw % 3600) / 60 ))
-            if [ "$d" -gt 0 ]; then
-                uptime_str="${d}d ${h}h ${m}m"
-            elif [ "$h" -gt 0 ]; then
-                uptime_str="${h}h ${m}m"
+            days=$((raw / 86400))
+            hours=$(( (raw % 86400) / 3600 ))
+            mins=$(( (raw % 3600) / 60 ))
+            if [ "$days" -gt 0 ]; then
+                P "${ORANGE}║  ${AMBER}Uptime${NC}     ${days}d ${hours}h ${mins}m"
+            elif [ "$hours" -gt 0 ]; then
+                P "${ORANGE}║  ${AMBER}Uptime${NC}     ${hours}h ${mins}m"
             else
-                uptime_str="${m}m"
+                P "${ORANGE}║  ${AMBER}Uptime${NC}     ${mins}m"
             fi
         fi
     fi
 
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}╠════════════════════════════════════════════════════════╣${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+
     # Memory
-    mem_str="N/A"
-    mem_bar=""
     if [ -f /proc/meminfo ]; then
-        mt=$(grep MemTotal /proc/meminfo | awk '{print $2}')
-        ma=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
-        if [ -n "$mt" ] && [ -n "$ma" ] && [ "$mt" -gt 0 ]; then
-            mu=$((mt - ma))
-            mt_mb=$((mt / 1024))
-            mu_mb=$((mu / 1024))
-            mp=$((mu * 100 / mt))
-            mem_str="${mu_mb}MB / ${mt_mb}MB (${mp}%)"
-            fl=$((mp / 5)); el=$((20 - fl))
-            bar=""; i=0; while [ $i -lt $fl ]; do bar="${bar}#"; i=$((i+1)); done
-            i=0; while [ $i -lt $el ]; do bar="${bar}-"; i=$((i+1)); done
-            mem_bar="[${bar}]"
+        mem_total=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+        mem_avail=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
+        if [ -n "$mem_total" ] && [ -n "$mem_avail" ]; then
+            mem_used=$((mem_total - mem_avail))
+            mem_total_mb=$((mem_total / 1024))
+            mem_used_mb=$((mem_used / 1024))
+            if [ "$mem_total" -gt 0 ]; then
+                mem_pct=$((mem_used * 100 / mem_total))
+            else
+                mem_pct=0
+            fi
+            bar_len=20
+            filled=$((mem_pct * bar_len / 100))
+            empty=$((bar_len - filled))
+            bar=""
+            i=0; while [ $i -lt $filled ]; do bar="${bar}#"; i=$((i+1)); done
+            i=0; while [ $i -lt $empty ]; do bar="${bar}-"; i=$((i+1)); done
+            P "${ORANGE}║  ${AMBER}RAM${NC}        [${GREEN}${bar}${NC}] ${mem_used_mb}/${mem_total_mb} MB (${mem_pct}%)"
         fi
     fi
 
     # Disk
-    disk_str="N/A"
-    disk_bar=""
     disk_info=$(df -h / 2>/dev/null | tail -1)
     if [ -n "$disk_info" ]; then
-        du_val=$(printf '%s' "$disk_info" | awk '{print $3}')
-        dt_val=$(printf '%s' "$disk_info" | awk '{print $2}')
-        dp_val=$(printf '%s' "$disk_info" | awk '{print $5}' | tr -d '%')
-        disk_str="${du_val} / ${dt_val} (${dp_val}%)"
-        fl=$((dp_val / 5)); el=$((20 - fl))
-        bar=""; i=0; while [ $i -lt $fl ]; do bar="${bar}#"; i=$((i+1)); done
-        i=0; while [ $i -lt $el ]; do bar="${bar}-"; i=$((i+1)); done
-        disk_bar="[${bar}]"
+        disk_used=$(printf '%s' "$disk_info" | awk '{print $3}')
+        disk_total=$(printf '%s' "$disk_info" | awk '{print $2}')
+        disk_pct=$(printf '%s' "$disk_info" | awk '{print $5}' | tr -d '%')
+        bar_len=20
+        filled=$((disk_pct * bar_len / 100))
+        empty=$((bar_len - filled))
+        bar=""
+        i=0; while [ $i -lt $filled ]; do bar="${bar}#"; i=$((i+1)); done
+        i=0; while [ $i -lt $empty ]; do bar="${bar}-"; i=$((i+1)); done
+        P "${ORANGE}║  ${AMBER}Disk${NC}       [${GREEN}${bar}${NC}] ${disk_used}/${disk_total} (${disk_pct}%)"
     fi
 
-    # Load
-    load_str="N/A"
-    [ -f /proc/loadavg ] && load_str=$(cut -d' ' -f1-3 /proc/loadavg)
-
-    # CPU
-    cpu_str="N/A"
-    if [ -f /proc/cpuinfo ]; then
-        cpu_model=$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | sed 's/^ //')
-        cpu_cores=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null)
-        [ -n "$cpu_model" ] && cpu_str="${cpu_model} (${cpu_cores}c)"
+    # CPU load
+    if [ -f /proc/loadavg ]; then
+        load=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)
+        P "${ORANGE}║  ${AMBER}Load${NC}       ${load}"
     fi
 
-    # Processes
-    proc_count=0
-    [ -d /proc ] && proc_count=$(ls -d /proc/[0-9]* 2>/dev/null | wc -l)
-
-    # Packages (try multiple package managers)
-    pkg_str=""
-    if command -v dpkg >/dev/null 2>&1; then
-        pkg_count=$(dpkg -l 2>/dev/null | grep -c '^ii')
-        pkg_str="${pkg_count} (dpkg)"
-    elif command -v apk >/dev/null 2>&1; then
-        pkg_count=$(apk list --installed 2>/dev/null | wc -l)
-        pkg_str="${pkg_count} (apk)"
-    elif command -v rpm >/dev/null 2>&1; then
-        pkg_count=$(rpm -qa 2>/dev/null | wc -l)
-        pkg_str="${pkg_count} (rpm)"
-    elif command -v pacman >/dev/null 2>&1; then
-        pkg_count=$(pacman -Q 2>/dev/null | wc -l)
-        pkg_str="${pkg_count} (pacman)"
+    # Process count
+    if [ -d /proc ]; then
+        proc_count=$(ls -d /proc/[0-9]* 2>/dev/null | wc -l)
+        P "${ORANGE}║  ${AMBER}Procs${NC}      ${proc_count} running"
     fi
 
-    P ""
-    P "${ORANGE}+========================================================+${NC}"
-    P "${ORANGE}|                                                        |${NC}"
-    P "${ORANGE}|         ${WHITE}${BOLD}SUNDY.HOST -- SYSTEM STATUS${NC}${ORANGE}                    |${NC}"
-    P "${ORANGE}|                                                        |${NC}"
-    P "${ORANGE}+--------------------------------------------------------+${NC}"
-    P "${ORANGE}|                                                        |${NC}"
-    P "${ORANGE}|  ${AMBER}${BOLD}Host${NC}        ${WHITE}${hostname_val}${NC}"
-    P "${ORANGE}|  ${AMBER}${BOLD}OS${NC}          ${WHITE}${os_name}${NC}"
-    P "${ORANGE}|  ${AMBER}${BOLD}Kernel${NC}      ${WHITE}${kernel}${NC}"
-    P "${ORANGE}|  ${AMBER}${BOLD}Arch${NC}        ${WHITE}${arch}${NC}"
-    P "${ORANGE}|  ${AMBER}${BOLD}Uptime${NC}      ${WHITE}${uptime_str}${NC}"
-    P "${ORANGE}|  ${AMBER}${BOLD}Shell${NC}       ${WHITE}${shell_val}${NC}"
-    [ -n "$pkg_str" ] && P "${ORANGE}|  ${AMBER}${BOLD}Packages${NC}    ${WHITE}${pkg_str}${NC}"
-    P "${ORANGE}|  ${AMBER}${BOLD}CPU${NC}         ${WHITE}${cpu_str}${NC}"
-    P "${ORANGE}|  ${AMBER}${BOLD}Processes${NC}   ${WHITE}${proc_count} running${NC}"
-    P "${ORANGE}|  ${AMBER}${BOLD}Load${NC}        ${WHITE}${load_str}${NC}"
-    P "${ORANGE}|                                                        |${NC}"
-    P "${ORANGE}+--------------------------------------------------------+${NC}"
-    P "${ORANGE}|                                                        |${NC}"
-    P "${ORANGE}|  ${AMBER}${BOLD}Memory${NC}      ${GREEN}${mem_bar}${NC} ${mem_str}"
-    P "${ORANGE}|  ${AMBER}${BOLD}Disk${NC}        ${GREEN}${disk_bar}${NC} ${disk_str}"
-    P "${ORANGE}|                                                        |${NC}"
-    P "${ORANGE}+========================================================+${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}╚════════════════════════════════════════════════════════╝${NC}"
     P ""
 }
 
 # ── Ports ──────────────────────────────────────────────────────────────────
 show_ports() {
     P ""
-    P "${ORANGE}+========================================================+${NC}"
-    P "${ORANGE}|                                                        |${NC}"
-    P "${ORANGE}|         ${WHITE}${BOLD}SUNDY.HOST -- PORTS (30000-35000)${NC}${ORANGE}              |${NC}"
-    P "${ORANGE}|                                                        |${NC}"
-    P "${ORANGE}+--------------------------------------------------------+${NC}"
-    P "${ORANGE}|                                                        |${NC}"
+    P "${ORANGE}╔════════════════════════════════════════════════════════╗${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}║        ${WHITE}${BOLD}SUNDY.HOST --- PORTS (30000-35000)${NC}${ORANGE}             ║${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}╠════════════════════════════════════════════════════════╣${NC}"
+    P "${ORANGE}║                                                        ║${NC}"
 
     config_file="$HOME/vps.config"
     port_found=0
@@ -196,23 +176,11 @@ show_ports() {
             case "$key" in ""|"#"*) continue ;; esac
             case "$key" in
                 internalip)
-                    P "${ORANGE}|  ${AMBER}IP${NC}     ${WHITE}${value}${NC}"
+                    P "${ORANGE}║  ${AMBER}IP${NC}    ${value}"
                 ;;
                 port|port[0-9]*)
                     if [ -n "$value" ]; then
-                        # Check if port is in use
-                        if command -v ss >/dev/null 2>&1; then
-                            listener=$(ss -tlnp 2>/dev/null | grep ":${value} " | awk '{print $NF}' | head -1)
-                        elif command -v netstat >/dev/null 2>&1; then
-                            listener=$(netstat -tlnp 2>/dev/null | grep ":${value} " | awk '{print $NF}' | head -1)
-                        else
-                            listener=""
-                        fi
-                        if [ -n "$listener" ] && [ "$listener" != "-" ]; then
-                            P "${ORANGE}|  ${GREEN}*${NC}  ${key} = ${WHITE}${value}${NC}  ${DIM}(${listener})${NC}"
-                        else
-                            P "${ORANGE}|  ${DIM}o${NC}  ${key} = ${WHITE}${value}${NC}  ${DIM}(free)${NC}"
-                        fi
+                        P "${ORANGE}║  ${GREEN}+${NC}     ${key} = ${value}"
                         port_found=1
                     fi
                 ;;
@@ -221,88 +189,11 @@ show_ports() {
     fi
 
     if [ "$port_found" -eq 0 ]; then
-        P "${ORANGE}|  ${DIM}No additional ports configured.${NC}"
-        P "${ORANGE}|  ${DIM}Add ports in the Startup tab.${NC}"
+        P "${ORANGE}║  ${DIM}No additional ports. Add in Startup tab.${NC}${ORANGE}            ║${NC}"
     fi
 
-    P "${ORANGE}|                                                        |${NC}"
-    P "${ORANGE}+========================================================+${NC}"
-    P ""
-}
-
-# ── Port check ─────────────────────────────────────────────────────────────
-do_portcheck() {
-    port="$1"
-    if [ -z "$port" ]; then
-        log "INFO" "Usage: portcheck <port>" "$AMBER"
-        log "INFO" "Example: portcheck 30001" "$AMBER"
-        return
-    fi
-
-    P ""
-    P "${ORANGE}+--------------------------------------+${NC}"
-    P "${ORANGE}|  ${WHITE}${BOLD}Port ${port} status${NC}"
-    P "${ORANGE}+--------------------------------------+${NC}"
-
-    found=0
-
-    # TCP check
-    if command -v ss >/dev/null 2>&1; then
-        tcp_info=$(ss -tlnp 2>/dev/null | grep ":${port} ")
-        udp_info=$(ss -ulnp 2>/dev/null | grep ":${port} ")
-    elif command -v netstat >/dev/null 2>&1; then
-        tcp_info=$(netstat -tlnp 2>/dev/null | grep ":${port} ")
-        udp_info=$(netstat -ulnp 2>/dev/null | grep ":${port} ")
-    else
-        P "${ORANGE}|  ${RED}ss/netstat not available${NC}"
-        P "${ORANGE}+--------------------------------------+${NC}"
-        return
-    fi
-
-    if [ -n "$tcp_info" ]; then
-        P "${ORANGE}|  ${GREEN}TCP LISTENING${NC}"
-        printf '%s\n' "$tcp_info" | while IFS= read -r line; do
-            proc=$(printf '%s' "$line" | awk '{print $NF}')
-            addr=$(printf '%s' "$line" | awk '{print $4}')
-            P "${ORANGE}|    ${WHITE}${addr}${NC}  ${DIM}${proc}${NC}"
-        done
-        found=1
-    fi
-
-    if [ -n "$udp_info" ]; then
-        P "${ORANGE}|  ${GREEN}UDP LISTENING${NC}"
-        printf '%s\n' "$udp_info" | while IFS= read -r line; do
-            proc=$(printf '%s' "$line" | awk '{print $NF}')
-            addr=$(printf '%s' "$line" | awk '{print $4}')
-            P "${ORANGE}|    ${WHITE}${addr}${NC}  ${DIM}${proc}${NC}"
-        done
-        found=1
-    fi
-
-    if [ "$found" -eq 0 ]; then
-        P "${ORANGE}|  ${DIM}Port ${port} is free (not in use)${NC}"
-    fi
-
-    P "${ORANGE}+--------------------------------------+${NC}"
-    P ""
-}
-
-# ── Process list ───────────────────────────────────────────────────────────
-show_procs() {
-    P ""
-    P "${ORANGE}+========================================================+${NC}"
-    P "${ORANGE}|         ${WHITE}${BOLD}SUNDY.HOST -- PROCESSES${NC}${ORANGE}                        |${NC}"
-    P "${ORANGE}+========================================================+${NC}"
-    P ""
-    if command -v ps >/dev/null 2>&1; then
-        ps aux 2>/dev/null | head -25
-    else
-        ls -d /proc/[0-9]* 2>/dev/null | while read -r p; do
-            pid=$(basename "$p")
-            cmd=$(cat "$p/cmdline" 2>/dev/null | tr '\0' ' ')
-            [ -n "$cmd" ] && P "  ${pid}  ${cmd}"
-        done | head -25
-    fi
+    P "${ORANGE}║                                                        ║${NC}"
+    P "${ORANGE}╚════════════════════════════════════════════════════════╝${NC}"
     P ""
 }
 
@@ -310,16 +201,16 @@ show_procs() {
 do_reinstall() {
     P ""
     P "${RED}${BOLD}WARNING: This will erase ALL data!${NC}"
-    printf '%b' "${AMBER}Type 'yes' to confirm: ${NC}"
+    printf '%b' "${AMBER}Confirm? (yes/no): ${NC}"
     read -r confirm
-    if [ "$confirm" = "yes" ]; then
-        log "INFO" "Wiping..." "$ORANGE"
+    if [ "$confirm" = "yes" ] || [ "$confirm" = "y" ]; then
+        log "INFO" "Wiping data..." "$ORANGE"
         rm -f "$HOME/.installed" "/.installed"
         find "$HOME" -mindepth 1 -maxdepth 1 \
             ! -name "run.sh" ! -name "common.sh" ! -name "firewall.sh" \
             ! -name "vps.config" ! -name ".shell_history" \
             -exec rm -rf {} + 2>/dev/null
-        log "SUCCESS" "Done. Restarting..." "$GREEN"
+        log "SUCCESS" "Done. Restarting for OS selection..." "$GREEN"
         sleep 1
         exit 2
     else
@@ -358,17 +249,24 @@ do_restore() {
         tar --numeric-owner -xzf "/$file" -C / --exclude="$file" >/dev/null 2>&1
         log "SUCCESS" "Restored from ${file}" "$GREEN"
     else
-        log "ERROR" "Not found: ${file}" "$RED"
+        log "ERROR" "File not found: ${file}" "$RED"
     fi
 }
 
 # ── Interactive program wrappers ───────────────────────────────────────────
 wrap_interactive() {
-    case "$1" in
-        top)    top -b -n 1 2>/dev/null | head -30; return 0 ;;
+    prog="$1"
+    shift
+    case "$prog" in
+        top)
+            top -b -n 1 "$@" 2>/dev/null | head -30
+            return 0
+        ;;
         htop|btop|nload|iftop|bmon|nethogs|glances)
-            log "INFO" "$1 not supported in panel console. Use 'status' or 'procs'." "$AMBER"
-            return 0 ;;
+            log "INFO" "${prog} is not supported in Pterodactyl console." "$AMBER"
+            log "INFO" "Use 'status' for system info." "$AMBER"
+            return 0
+        ;;
     esac
     return 1
 }
@@ -384,17 +282,19 @@ execute() {
     args=$(printf '%s' "$cmd" | cut -d' ' -f2- -s)
 
     case "$prog" in
-        clear|cls)     printf '\033c' ;;
-        exit)          cleanup ;;
-        help)          print_help_banner ;;
-        status)        show_status ;;
-        ports)         show_ports ;;
-        portcheck)     do_portcheck "$args" ;;
-        procs)         show_procs ;;
-        firewall)      . /firewall.sh; show_firewall_status ;;
-        reinstall)     do_reinstall ;;
-        backup)        do_backup ;;
-        restore)       do_restore "$args" ;;
+        clear|cls)    printf '\033c' ;;
+        exit)         cleanup ;;
+        stop)
+            interrupt_child
+            log "INFO" "Stopped." "$AMBER"
+        ;;
+        help)         print_help_banner ;;
+        status)       show_status ;;
+        ports)        show_ports ;;
+        firewall)     . /firewall.sh; show_firewall_status ;;
+        reinstall)    do_reinstall ;;
+        backup)       do_backup ;;
+        restore)      do_restore "$args" ;;
         history)
             if [ -f "$HISTORY_FILE" ]; then
                 P ""
@@ -407,11 +307,13 @@ execute() {
             log "INFO" "Already running as root." "$AMBER"
         ;;
         top|htop|btop|nload|iftop|bmon|nethogs|glances)
-            wrap_interactive "$prog"
+            wrap_interactive "$prog" $args
         ;;
         *)
-            # Run in FOREGROUND so interactive tools (apt, etc) work
-            eval "$cmd"
+            eval "$cmd" &
+            CHILD_PID=$!
+            wait $CHILD_PID 2>/dev/null
+            CHILD_PID=""
         ;;
     esac
 }
@@ -428,7 +330,7 @@ sleep 1
 printf '\033c'
 
 print_main_banner
-log "INFO" "Type 'help' for commands. Ctrl+C stops running commands." "$AMBER"
+log "INFO" "Type 'help' for commands." "$AMBER"
 
 sh "/autorun.sh" 2>/dev/null
 
