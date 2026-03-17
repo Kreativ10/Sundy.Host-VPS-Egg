@@ -202,9 +202,16 @@ do_ssh() {
     # Clean up duplicate ports dynamically
     AVAILABLE_PORTS=$(echo "$AVAILABLE_PORTS" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/^ //;s/ $//')
 
+    # Attempt to get public IP
+    if command -v curl >/dev/null; then
+        PUBLIC_IP=$(curl -s --connect-timeout 3 icanhazip.com 2>/dev/null)
+        [ -n "$PUBLIC_IP" ] && IP_ADDRESS="$PUBLIC_IP"
+    fi
+
+    P ""
     if [ -z "$AVAILABLE_PORTS" ] || [ "$AVAILABLE_PORTS" = " " ]; then
         P "${AMBER}Warning: Could not detect additional ports in vps.config.${NC}"
-        printf '%b' "${AMBER}Enter the main port assigned to this server manually (e.g., 30000): ${NC}"
+        P "${AMBER}Enter the main port assigned to this server manually (e.g., 30000): ${NC}"
         read -r SSPORT
         if [ -z "$SSPORT" ]; then
              P "${RED}Port cannot be empty!${NC}"
@@ -213,7 +220,7 @@ do_ssh() {
         AVAILABLE_PORTS="$SSPORT"
     else
         P "Available ports:${GREEN} ${AVAILABLE_PORTS}${NC}"
-        printf '%b' "${AMBER}Select a port for SSH: ${NC}"
+        P "${AMBER}Select a port for SSH: ${NC}"
         read -r SSPORT
         
         # Verify exact match
@@ -227,11 +234,13 @@ do_ssh() {
         fi
     fi
     
-    printf '%b' "${AMBER}Enter new SSH username (e.g., root): ${NC}"
+    P ""
+    P "${AMBER}Enter new SSH username (e.g., root): ${NC}"
     read -r SSUSER
     [ -z "$SSUSER" ] && SSUSER="root"
     
-    printf '%b' "${AMBER}Enter new SSH password: ${NC}"
+    P ""
+    P "${AMBER}Enter new SSH password: ${NC}"
     read -r SSPASS
     [ -z "$SSPASS" ] && { P "${RED}Password cannot be empty.${NC}"; return; }
     
@@ -263,9 +272,25 @@ do_ssh() {
     mkdir -p /run/sshd 2>/dev/null
     ssh-keygen -A >/dev/null 2>&1
     
+    # Ensure standard host keys exist if ssh-keygen -A failed (e.g. some minimalist distros)
+    if [ ! -f /etc/ssh/ssh_host_rsa_key ]; then
+        ssh-keygen -t rsa -N "" -f /etc/ssh/ssh_host_rsa_key >/dev/null 2>&1
+    fi
+    if [ ! -f /etc/ssh/ssh_host_ed25519_key ]; then
+        ssh-keygen -t ed25519 -N "" -f /etc/ssh/ssh_host_ed25519_key >/dev/null 2>&1
+    fi
+    
     SSHD_CONF="/etc/ssh/sshd_config"
     mkdir -p /etc/ssh 2>/dev/null
-    printf 'Port %s\nPermitRootLogin yes\nPasswordAuthentication yes\nListenAddress 0.0.0.0\n' "$SSPORT" > "$SSHD_CONF"
+    cat <<EOF > "$SSHD_CONF"
+Port $SSPORT
+ListenAddress 0.0.0.0
+PermitRootLogin yes
+PasswordAuthentication yes
+ChallengeResponseAuthentication no
+UsePAM yes
+PrintMotd no
+EOF
     
     # Restart daemon
     pkill -f "sshd" 2>/dev/null
