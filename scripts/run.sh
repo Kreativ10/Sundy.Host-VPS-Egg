@@ -247,7 +247,7 @@ do_restore() {
 wrap_interactive() {
     prog="$1"
     case "$prog" in
-        top|htop|btop|nload|iftop|bmon|nethogs|glances)
+        top|htop|btop|nload|iftop|bmon|nethogs|glances|iotop)    
             P ""
             P "${RED}Error: ${prog} is not supported in the Pterodactyl console.${NC}"
             P "Use ${AMBER}status${NC}, ${AMBER}procs${NC}, or ${AMBER}portcheck${NC} instead."
