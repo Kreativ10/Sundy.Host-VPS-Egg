@@ -9,6 +9,13 @@ HOSTNAME="Sundy"
 HISTORY_FILE="${HOME}/.shell_history"
 MAX_HISTORY=500
 
+# ── vps.config location ───────────────────────────────────────────────────
+# Inside PRoot, rootfs=/home/container, so the real /home/container/vps.config
+# becomes /vps.config inside PRoot. Try both paths.
+VPS_CONFIG="/vps.config"
+[ ! -f "$VPS_CONFIG" ] && VPS_CONFIG="$HOME/vps.config"
+[ ! -f "$VPS_CONFIG" ] && VPS_CONFIG="/home/container/vps.config"
+
 if [ ! -e "/.installed" ]; then
     rm -f "/rootfs.tar.xz" "/rootfs.tar.gz"
     rm -rf /tmp/sbin
@@ -19,8 +26,6 @@ fi
 [ ! -e "/autorun.sh" ] && touch /autorun.sh && chmod +x /autorun.sh
 
 # ── Signal handling ────────────────────────────────────────────────────────
-# Trap SIGINT (Ctrl+C / Panel Stop Button) so the shell doesn't exit,
-# but child processes in foreground WILL get killed automatically.
 trap 'P "\n${AMBER}[Sundy.Host] Process interrupted.${NC}"' INT
 trap 'log "INFO" "Session ended. Goodbye!" "$ORANGE"; exit 0' TERM
 
@@ -44,18 +49,33 @@ save_history() {
     mv "$HISTORY_FILE.tmp" "$HISTORY_FILE" 2>/dev/null
 }
 
+# ── Parse vps.config ports ─────────────────────────────────────────────────
+get_config_ports() {
+    _ports=""
+    [ ! -f "$VPS_CONFIG" ] && return
+    while IFS='=' read -r key value; do
+        key=$(printf '%s' "$key" | tr -d '[:space:]' | tr 'A-Z' 'a-z')
+        value=$(printf '%s' "$value" | tr -d '[:space:]')
+        case "$key" in ""|"#"*) continue ;; esac
+        case "$key" in
+            *port*)
+                [ -n "$value" ] && _ports="$_ports $value"
+            ;;
+        esac
+    done < "$VPS_CONFIG"
+    printf '%s' "$_ports" | tr ' ' '\n' | sort -un | tr '\n' ' ' | sed 's/^ //;s/ $//'
+}
+
 # ── Status (Neofetch Style) ────────────────────────────────────────────────
 show_status() {
     P ""
-    
-    # Gather Data
+
     OS_NAME="Linux"
     [ -f /etc/os-release ] && . /etc/os-release && OS_NAME="$PRETTY_NAME"
-    
+
     KERNEL=$(uname -r)
     ARCH=$(uname -m)
-    
-    # Uptime
+
     UPTIME_STR="N/A"
     if [ -f /proc/uptime ]; then
         raw=$(cut -d. -f1 /proc/uptime 2>/dev/null)
@@ -67,8 +87,7 @@ show_status() {
             || { [ "$hours" -gt 0 ] && UPTIME_STR="${hours} hours, ${mins} mins" || UPTIME_STR="${mins} mins"; }
         fi
     fi
-    
-    # RAM
+
     RAM_STR="N/A"
     if [ -f /proc/meminfo ]; then
         mt=$(grep -m1 MemTotal /proc/meminfo | awk '{print $2}')
@@ -81,8 +100,7 @@ show_status() {
             RAM_STR="${mu_mb}MiB / ${mt_mb}MiB (${pct}%)"
         fi
     fi
-    
-    # Disk
+
     DISK_STR="N/A"
     disk_info=$(df -h / 2>/dev/null | tail -1)
     if [ -n "$disk_info" ]; then
@@ -91,11 +109,9 @@ show_status() {
         dp=$(printf '%s' "$disk_info" | awk '{print $5}')
         DISK_STR="${du_val} / ${dt_val} (${dp})"
     fi
-    
-    # Procs
+
     proc_cnt=$(ls -d /proc/[0-9]* 2>/dev/null | wc -l)
 
-    # Print Neofetch-style layout
     P "  ${ORANGE}███████╗${NC}   ${WHITE}${BOLD}root${NC}@${LIGHT_ORANGE}${HOSTNAME}${NC}"
     P "  ${ORANGE}██╔════╝${NC}   -------------------"
     P "  ${ORANGE}███████╗${NC}   ${AMBER}OS:${NC}       ${OS_NAME}"
@@ -105,6 +121,7 @@ show_status() {
     P "             ${AMBER}RAM:${NC}      ${RAM_STR}"
     P "             ${AMBER}Disk:${NC}     ${DISK_STR}"
     P "             ${AMBER}Procs:${NC}    ${proc_cnt} running"
+    P "             ${AMBER}IP:${NC}       ${PUBLIC_IP:-N/A}"
     P ""
 }
 
@@ -118,33 +135,29 @@ show_ports() {
     P "${ORANGE}╠════════════════════════════════════════════════════════════════╣${NC}"
     P "${ORANGE}║                                                                ║${NC}"
 
-    config_file="$HOME/vps.config"
-    port_found=0
-    if [ -f "$config_file" ]; then
-        while IFS='=' read -r key value; do
-            key=$(printf '%s' "$key" | tr -d '[:space:]' | tr '[A-Z]' '[a-z]')
-            value=$(printf '%s' "$value" | tr -d '[:space:]')
-            case "$key" in ""|"#"*) continue ;; esac
-            
-            if [ "$key" = "internalip" ] || [ "$key" = "internal_ip" ] || [ "$key" = "serverip" ]; then
-                P "${ORANGE}║  ${AMBER}Internal IP:${NC} $value$(printf '%*s' $((46 - ${#value})) '') ${ORANGE}║${NC}"
-            fi
-            
-            if echo "$key" | grep -q "port"; then
-                if [ -n "$value" ]; then
-                    P "${ORANGE}║     ${GREEN}+${NC} Allocated Port = ${BOLD}${value}${NC}$(printf '%*s' $((39 - ${#value})) '') ${ORANGE}║${NC}"
-                    port_found=1
-                fi
-            fi
-        done < "$config_file"
-    fi
+    P "${ORANGE}║  ${AMBER}Public IP:${NC} ${PUBLIC_IP:-N/A}"
+    P "${ORANGE}║${NC}"
 
-    if [ "$port_found" -eq 0 ]; then
-        P "${ORANGE}║  ${DIM}No additional ports. Add them in the Panel Startup tab.${NC}${ORANGE}       ║${NC}"
+    found_ports=$(get_config_ports)
+    if [ -n "$found_ports" ]; then
+        for p in $found_ports; do
+            P "${ORANGE}║     ${GREEN}+${NC} Port ${BOLD}${p}${NC}"
+        done
+    else
+        P "${ORANGE}║  ${DIM}No ports detected. Check vps.config or Panel > Startup tab.${NC}"
     fi
 
     P "${ORANGE}║                                                                ║${NC}"
     P "${ORANGE}╚════════════════════════════════════════════════════════════════╝${NC}"
+    P ""
+
+    P "${DIM}Config file: ${VPS_CONFIG}${NC}"
+    if [ -f "$VPS_CONFIG" ]; then
+        P "${DIM}Contents:${NC}"
+        cat "$VPS_CONFIG"
+    else
+        P "${RED}File not found!${NC}"
+    fi
     P ""
 }
 
@@ -173,141 +186,241 @@ do_portcheck() {
     P ""
 }
 
+# ── SSH Setup ──────────────────────────────────────────────────────────────
 do_ssh() {
     P ""
-    P "${ORANGE}=== Sundy.Host | SSH Setup ===${NC}"
-    
-    config_file="$HOME/vps.config"
-    AVAILABLE_PORTS=""
-    
+    P "${ORANGE}╔════════════════════════════════════════════════════════════════╗${NC}"
+    P "${ORANGE}║           ${WHITE}${BOLD}SUNDY.HOST --- SSH SETUP${NC}${ORANGE}                             ║${NC}"
+    P "${ORANGE}╚════════════════════════════════════════════════════════════════╝${NC}"
+    P ""
+
     # Use PUBLIC_IP set by helper.sh at container level
     IP_ADDRESS="${PUBLIC_IP:-UNKNOWN}"
-    
-    if [ -f "$config_file" ]; then
-        while IFS='=' read -r key value; do
-            key=$(printf '%s' "$key" | tr -d '[:space:]' | tr '[A-Z]' '[a-z]')
-            value=$(printf '%s' "$value" | tr -d '[:space:]')
-            case "$key" in ""|"#"*) continue ;; esac
-            
-            if [ "$key" = "internalip" ] || [ "$key" = "internal_ip" ] || [ "$key" = "serverip" ]; then 
-                IP_ADDRESS="$value"
-            fi
-            
-            if echo "$key" | grep -q "port"; then
-                if [ -n "$value" ]; then
-                    AVAILABLE_PORTS="$AVAILABLE_PORTS $value"
-                fi
-            fi
-        done < "$config_file"
-    fi
-    
-    AVAILABLE_PORTS=$(echo "$AVAILABLE_PORTS" | tr ' ' '\n' | sort -un | tr '\n' ' ' | sed 's/^ //;s/ $//')
 
-    P ""
-    if [ -z "$AVAILABLE_PORTS" ] || [ "$AVAILABLE_PORTS" = " " ]; then
-        P "${AMBER}Warning: Could not detect additional ports in vps.config.${NC}"
-        P "${AMBER}Enter the main port assigned to this server manually (e.g., 30000): ${NC}"
+    # Get available ports
+    AVAILABLE_PORTS=$(get_config_ports)
+
+    if [ -z "$AVAILABLE_PORTS" ]; then
+        P "${AMBER}Could not detect ports from vps.config.${NC}"
+        P "${AMBER}Enter the port for SSH (from your Panel allocation):${NC}"
         read -r SSPORT
-        if [ -z "$SSPORT" ]; then
-             P "${RED}Port cannot be empty!${NC}"
-             return
-        fi
-        AVAILABLE_PORTS="$SSPORT"
+        [ -z "$SSPORT" ] && { P "${RED}Port cannot be empty!${NC}"; return; }
     else
-        P "Available ports:${GREEN} ${AVAILABLE_PORTS}${NC}"
-        P "${AMBER}Select a port for SSH: ${NC}"
+        P "Your allocated ports: ${GREEN}${AVAILABLE_PORTS}${NC}"
+        P ""
+        P "${AMBER}Enter the port to use for SSH:${NC}"
         read -r SSPORT
-        
-        # Verify exact match
+
         valid_port=0
         for p in $AVAILABLE_PORTS; do
-            if [ "$p" = "$SSPORT" ]; then valid_port=1; break; fi
+            [ "$p" = "$SSPORT" ] && valid_port=1 && break
         done
         if [ "$valid_port" -eq 0 ]; then
-            P "${RED}Error: Port ${SSPORT} is not allocated to you.${NC}"
+            P "${RED}Error: Port ${SSPORT} is not in your allocation.${NC}"
             return
         fi
     fi
-    
+
     P ""
-    P "${AMBER}Enter new SSH username (e.g., root): ${NC}"
+    P "${AMBER}Enter SSH username (default: root):${NC}"
     read -r SSUSER
     [ -z "$SSUSER" ] && SSUSER="root"
-    
+
     P ""
-    P "${AMBER}Enter new SSH password: ${NC}"
+    P "${AMBER}Enter SSH password:${NC}"
     read -r SSPASS
     [ -z "$SSPASS" ] && { P "${RED}Password cannot be empty.${NC}"; return; }
-    
-    P "${ORANGE}Configuring SSH...${NC}"
-    
+
+    P ""
+    P "${ORANGE}[Sundy.Host] Installing and configuring SSH...${NC}"
+
     # Auto-install openssh-server if missing
-    if ! command -v sshd >/dev/null; then
-        P "${AMBER}OpenSSH Server not found. Attempting to install...${NC}"
-        if command -v apt-get >/dev/null; then apt-get update && apt-get install -y openssh-server
-        elif command -v apk >/dev/null; then apk update && apk add openssh
-        elif command -v yum >/dev/null; then yum install -y openssh-server
-        elif command -v dnf >/dev/null; then dnf install -y openssh-server
-        elif command -v pacman >/dev/null; then pacman -Sy --noconfirm openssh
+    if ! command -v sshd >/dev/null 2>&1; then
+        P "${AMBER}OpenSSH Server not found. Installing...${NC}"
+        if command -v apt-get >/dev/null; then
+            apt-get update -qq && apt-get install -y -qq openssh-server 2>&1
+        elif command -v apk >/dev/null; then
+            apk update && apk add openssh openssh-server 2>&1
+        elif command -v yum >/dev/null; then
+            yum install -y openssh-server 2>&1
+        elif command -v dnf >/dev/null; then
+            dnf install -y openssh-server 2>&1
+        elif command -v pacman >/dev/null; then
+            pacman -Sy --noconfirm openssh 2>&1
         else
-            P "${RED}Could not install OpenSSH automatically. Please install it manually.${NC}"
+            P "${RED}Could not install OpenSSH. Install it manually: apt install openssh-server${NC}"
             return
         fi
     fi
-    
-    # Create user and change password
+
+    # Verify sshd was installed
+    SSHD_BIN=$(command -v sshd 2>/dev/null)
+    if [ -z "$SSHD_BIN" ]; then
+        # Try common paths
+        for path in /usr/sbin/sshd /usr/bin/sshd /sbin/sshd; do
+            [ -x "$path" ] && SSHD_BIN="$path" && break
+        done
+    fi
+    if [ -z "$SSHD_BIN" ]; then
+        P "${RED}Error: sshd binary not found even after install.${NC}"
+        return
+    fi
+    P "${GREEN}Found sshd at: ${SSHD_BIN}${NC}"
+
+    # Create user / set password
     if [ "$SSUSER" != "root" ]; then
         if ! id "$SSUSER" >/dev/null 2>&1; then
-            useradd -m -s /bin/bash "$SSUSER" 2>/dev/null || adduser -D -s /bin/bash "$SSUSER" 2>/dev/null
+            useradd -m -s /bin/bash "$SSUSER" 2>/dev/null || adduser -D -s /bin/sh "$SSUSER" 2>/dev/null
         fi
     fi
-    printf '%s:%s\n' "$SSUSER" "$SSPASS" | chpasswd
-    
-    # Keys & Config
-    mkdir -p /run/sshd 2>/dev/null
-    ssh-keygen -A >/dev/null 2>&1
-    
-    # Ensure standard host keys exist if ssh-keygen -A failed (e.g. some minimalist distros)
+
+    # Set password
+    echo "${SSUSER}:${SSPASS}" | chpasswd 2>/dev/null
+    if [ $? -ne 0 ]; then
+        # Some distros need different approach
+        echo -e "${SSPASS}\n${SSPASS}" | passwd "$SSUSER" 2>/dev/null
+    fi
+
+    # Generate host keys
+    mkdir -p /etc/ssh /run/sshd /var/run/sshd 2>/dev/null
+
     if [ ! -f /etc/ssh/ssh_host_rsa_key ]; then
-        ssh-keygen -t rsa -N "" -f /etc/ssh/ssh_host_rsa_key >/dev/null 2>&1
+        ssh-keygen -t rsa -b 2048 -N "" -f /etc/ssh/ssh_host_rsa_key >/dev/null 2>&1
+        P "${GREEN}Generated RSA host key${NC}"
     fi
     if [ ! -f /etc/ssh/ssh_host_ed25519_key ]; then
         ssh-keygen -t ed25519 -N "" -f /etc/ssh/ssh_host_ed25519_key >/dev/null 2>&1
+        P "${GREEN}Generated ED25519 host key${NC}"
     fi
-    
+    if [ ! -f /etc/ssh/ssh_host_ecdsa_key ]; then
+        ssh-keygen -t ecdsa -b 256 -N "" -f /etc/ssh/ssh_host_ecdsa_key >/dev/null 2>&1
+        P "${GREEN}Generated ECDSA host key${NC}"
+    fi
+
+    # Write sshd_config — minimal, compatible with all distros
     SSHD_CONF="/etc/ssh/sshd_config"
-    mkdir -p /etc/ssh 2>/dev/null
-    cat <<EOF > "$SSHD_CONF"
-Port $SSPORT
+    cat > "$SSHD_CONF" <<SSHEOF
+Port ${SSPORT}
 ListenAddress 0.0.0.0
+Protocol 2
+HostKey /etc/ssh/ssh_host_rsa_key
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
 PermitRootLogin yes
 PasswordAuthentication yes
 ChallengeResponseAuthentication no
-UsePAM yes
+UsePAM no
 PrintMotd no
-EOF
-    
-    # Restart daemon
-    pkill -f "sshd" 2>/dev/null
+AcceptEnv LANG LC_*
+Subsystem sftp /usr/lib/openssh/sftp-server
+SSHEOF
+
+    # Kill any existing sshd then start fresh
+    pkill sshd 2>/dev/null
     sleep 1
-    $(command -v sshd) -f "$SSHD_CONF" 2>/dev/null
-    
-    if pgrep -f "sshd" >/dev/null; then
+
+    # Start sshd and capture errors
+    P "${ORANGE}Starting SSH daemon on port ${SSPORT}...${NC}"
+    SSHD_OUTPUT=$($SSHD_BIN -f "$SSHD_CONF" -E /tmp/sshd.log 2>&1)
+
+    sleep 1
+
+    # Check if running
+    if pgrep -x sshd >/dev/null 2>&1; then
+        # Save config for autostart
+        cat > /etc/ssh/sundy_ssh.conf <<CONFEOF
+SSPORT=${SSPORT}
+SSUSER=${SSUSER}
+SSPASS=${SSPASS}
+CONFEOF
+
         P ""
-        P "${GREEN}╔════════════════════════════════════════════════════════╗${NC}"
-        P "${GREEN}║           ${WHITE}${BOLD}SSH SERVER IS RUNNING${NC}${GREEN}                        ║${NC}"
-        P "${GREEN}╠════════════════════════════════════════════════════════╣${NC}"
-        P "${GREEN}║  ${AMBER}IP:${NC}       ${WHITE}${IP_ADDRESS}${NC}$(printf '%*s' $((46 - ${#IP_ADDRESS})) '') ${GREEN}║${NC}"
-        P "${GREEN}║  ${AMBER}Port:${NC}     ${WHITE}${SSPORT}${NC}$(printf '%*s' $((46 - ${#SSPORT})) '') ${GREEN}║${NC}"
-        P "${GREEN}║  ${AMBER}Username:${NC} ${WHITE}${SSUSER}${NC}$(printf '%*s' $((46 - ${#SSUSER})) '') ${GREEN}║${NC}"
-        P "${GREEN}║  ${AMBER}Password:${NC} ${WHITE}${SSPASS}${NC}$(printf '%*s' $((46 - ${#SSPASS})) '') ${GREEN}║${NC}"
-        P "${GREEN}╚════════════════════════════════════════════════════════╝${NC}"
+        P "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
+        P "${GREEN}║              ${WHITE}${BOLD}SSH SERVER IS RUNNING${NC}${GREEN}                             ║${NC}"
+        P "${GREEN}╠════════════════════════════════════════════════════════════════╣${NC}"
+        P "${GREEN}║${NC}"
+        P "${GREEN}║${NC}  ${AMBER}IP:${NC}        ${WHITE}${BOLD}${IP_ADDRESS}${NC}"
+        P "${GREEN}║${NC}  ${AMBER}Port:${NC}      ${WHITE}${BOLD}${SSPORT}${NC}"
+        P "${GREEN}║${NC}  ${AMBER}Username:${NC}  ${WHITE}${BOLD}${SSUSER}${NC}"
+        P "${GREEN}║${NC}  ${AMBER}Password:${NC}  ${WHITE}${BOLD}${SSPASS}${NC}"
+        P "${GREEN}║${NC}"
+        P "${GREEN}╠════════════════════════════════════════════════════════════════╣${NC}"
+        P "${GREEN}║${NC}"
+        P "${GREEN}║${NC}  ${AMBER}Connect with:${NC}"
+        P "${GREEN}║${NC}  ${WHITE}ssh ${SSUSER}@${IP_ADDRESS} -p ${SSPORT}${NC}"
+        P "${GREEN}║${NC}"
+        P "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
         P ""
-        P "${AMBER}Command to connect:${NC}"
-        P "ssh ${SSUSER}@${IP_ADDRESS} -p ${SSPORT}"
+        P "${DIM}Note: SSH will stop when the server restarts. Run 'ssh' again to re-enable.${NC}"
+        P "${DIM}Note: systemctl does not work here. sshd runs directly.${NC}"
         P ""
     else
-        P "${RED}Error: Failed to start SSH server.${NC}"
+        P "${RED}Error: SSH server failed to start!${NC}"
+        P "${RED}Debug log:${NC}"
+        [ -f /tmp/sshd.log ] && cat /tmp/sshd.log
+        [ -n "$SSHD_OUTPUT" ] && P "$SSHD_OUTPUT"
+        P ""
+        P "${AMBER}Common fixes:${NC}"
+        P "  1. Make sure openssh-server is fully installed"
+        P "  2. Try: ${WHITE}apt install -y openssh-server${NC}"
+        P "  3. Check if port ${SSPORT} is allocated in Panel"
+        P ""
+    fi
+}
+
+# ── Reinstall ──────────────────────────────────────────────────────────────
+do_reinstall() {
+    P ""
+    P "${RED}${BOLD}WARNING: This will erase ALL data!${NC}"
+    P "${AMBER}Confirm? Type 'yes' to continue:${NC}"
+    read -r confirm
+    if [ "$confirm" = "yes" ] || [ "$confirm" = "y" ]; then
+        log "INFO" "Wiping data..." "$ORANGE"
+        rm -f "$HOME/.installed" "/.installed"
+        find "$HOME" -mindepth 1 -maxdepth 1 \
+            ! -name "run.sh" ! -name "common.sh" ! -name "firewall.sh" \
+            ! -name "vps.config" ! -name ".shell_history" \
+            -exec rm -rf {} + 2>/dev/null
+        log "SUCCESS" "Done. Restarting for OS selection..." "$GREEN"
+        sleep 1
+        exit 2
+    else
+        log "INFO" "Cancelled." "$AMBER"
+    fi
+}
+
+# ── Backup/Restore ────────────────────────────────────────────────────────
+do_backup() {
+    backup_file="/backup_$(date +%Y%m%d_%H%M%S).tar.gz"
+    log "INFO" "Creating backup..." "$ORANGE"
+    (cd / && tar --numeric-owner -czf "$backup_file" \
+        --exclude="./proc" --exclude="./tmp" --exclude="./dev" \
+        --exclude="./sys" --exclude="./run" --exclude="./vps.config" \
+        . ) >/dev/null 2>&1
+    if [ -f "$backup_file" ]; then
+        size=$(du -h "$backup_file" | cut -f1)
+        log "SUCCESS" "Backup: ${backup_file} (${size})" "$GREEN"
+    else
+        log "ERROR" "Backup failed." "$RED"
+    fi
+}
+
+do_restore() {
+    file="$1"
+    if [ -z "$file" ]; then
+        log "INFO" "Usage: restore <filename>" "$AMBER"
+        ls /backup_*.tar.gz 2>/dev/null | while read -r f; do
+            size=$(du -h "$f" | cut -f1)
+            P "  ${ORANGE}+${NC} $(basename "$f") (${size})"
+        done
+        return
+    fi
+    if [ -f "/$file" ]; then
+        log "INFO" "Restoring..." "$ORANGE"
+        tar --numeric-owner -xzf "/$file" -C / --exclude="$file" >/dev/null 2>&1
+        log "SUCCESS" "Restored from ${file}" "$GREEN"
+    else
+        log "ERROR" "File not found: ${file}" "$RED"
     fi
 }
 
@@ -318,7 +431,6 @@ wrap_interactive() {
         top|htop|btop|nload|iftop|bmon|nethogs|glances)
             P ""
             P "${RED}Error: ${prog} is not supported in the Pterodactyl console.${NC}"
-            P "Console applications requiring full terminal control will freeze."
             P "Use ${AMBER}status${NC}, ${AMBER}procs${NC}, or ${AMBER}portcheck${NC} instead."
             P ""
             return 0
@@ -347,6 +459,9 @@ execute() {
         portcheck)    do_portcheck ;;
         ssh)          do_ssh ;;
         firewall)     . /firewall.sh; show_firewall_status ;;
+        reinstall)    do_reinstall ;;
+        backup)       do_backup ;;
+        restore)      do_restore "$args" ;;
         history)
             if [ -f "$HISTORY_FILE" ]; then
                 P "\n${AMBER}Recent commands:${NC}"
@@ -354,13 +469,13 @@ execute() {
                 P ""
             fi
         ;;
+        sudo|su)
+            log "INFO" "Already running as root." "$AMBER"
+        ;;
         top|htop|btop|nload|iftop|bmon|nethogs|glances)
             wrap_interactive "$prog"
         ;;
         *)
-            # Run normally in foreground. 
-            # This fixes `apt install` prompts reading stdin!
-            # If user wants to stop, Pterodactyl Stop button sends SIGINT (^C)
             eval "$cmd"
         ;;
     esac
@@ -375,6 +490,20 @@ printf '\033c'
 
 print_main_banner
 log "INFO" "Type 'help' for commands." "$AMBER"
+
+# Auto-restart SSH if it was configured before
+if [ -f /etc/ssh/sundy_ssh.conf ]; then
+    . /etc/ssh/sundy_ssh.conf
+    SSHD_BIN=$(command -v sshd 2>/dev/null)
+    [ -z "$SSHD_BIN" ] && for p in /usr/sbin/sshd /usr/bin/sshd /sbin/sshd; do [ -x "$p" ] && SSHD_BIN="$p" && break; done
+    if [ -n "$SSHD_BIN" ] && [ -f /etc/ssh/sshd_config ]; then
+        mkdir -p /run/sshd /var/run/sshd 2>/dev/null
+        $SSHD_BIN -f /etc/ssh/sshd_config 2>/dev/null
+        if pgrep -x sshd >/dev/null 2>&1; then
+            log "INFO" "SSH auto-started on port ${SSPORT} (user: ${SSUSER})" "$GREEN"
+        fi
+    fi
+fi
 
 sh "/autorun.sh" 2>/dev/null
 
