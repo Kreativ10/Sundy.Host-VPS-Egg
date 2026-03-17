@@ -173,6 +173,114 @@ do_portcheck() {
     P ""
 }
 
+do_ssh() {
+    P ""
+    P "${ORANGE}=== Sundy.Host | SSH Setup ===${NC}"
+    
+    config_file="$HOME/vps.config"
+    AVAILABLE_PORTS=""
+    IP_ADDRESS="127.0.0.1"
+    
+    if [ -f "$config_file" ]; then
+        while IFS='=' read -r key value; do
+            key=$(printf '%s' "$key" | tr -d '[:space:]')
+            value=$(printf '%s' "$value" | tr -d '[:space:]')
+            case "$key" in ""|"#"*) continue ;; esac
+            if [ "$key" = "internalip" ]; then IP_ADDRESS="$value"; fi
+            case "$key" in
+                port|port[0-9]*)
+                    if [ -n "$value" ]; then
+                        AVAILABLE_PORTS="$AVAILABLE_PORTS $value"
+                    fi
+                ;;
+            esac
+        done < "$config_file"
+    fi
+
+    if [ -z "$AVAILABLE_PORTS" ] || [ "$AVAILABLE_PORTS" = " " ]; then
+        P "${RED}Error: You do not have any allocated ports!${NC}"
+        P "Add additional ports in the 'Startup' tab of the panel."
+        return
+    fi
+    
+    P "Available ports:${GREEN}${AVAILABLE_PORTS}${NC}"
+    printf '%b' "${AMBER}Select a port for SSH: ${NC}"
+    read -r SSPORT
+    
+    # Verify exact match
+    valid_port=0
+    for p in $AVAILABLE_PORTS; do
+        if [ "$p" = "$SSPORT" ]; then valid_port=1; break; fi
+    done
+    if [ "$valid_port" -eq 0 ]; then
+        P "${RED}Error: Port ${SSPORT} is not allocated to you.${NC}"
+        return
+    fi
+    
+    printf '%b' "${AMBER}Enter new SSH username (e.g., root): ${NC}"
+    read -r SSUSER
+    [ -z "$SSUSER" ] && SSUSER="root"
+    
+    printf '%b' "${AMBER}Enter new SSH password: ${NC}"
+    read -r SSPASS
+    [ -z "$SSPASS" ] && { P "${RED}Password cannot be empty.${NC}"; return; }
+    
+    P "${ORANGE}Configuring SSH...${NC}"
+    
+    # Auto-install openssh-server if missing
+    if ! command -v sshd >/dev/null; then
+        P "${AMBER}OpenSSH Server not found. Attempting to install...${NC}"
+        if command -v apt-get >/dev/null; then apt-get update && apt-get install -y openssh-server
+        elif command -v apk >/dev/null; then apk update && apk add openssh
+        elif command -v yum >/dev/null; then yum install -y openssh-server
+        elif command -v dnf >/dev/null; then dnf install -y openssh-server
+        elif command -v pacman >/dev/null; then pacman -Sy --noconfirm openssh
+        else
+            P "${RED}Could not install OpenSSH automatically. Please install it manually.${NC}"
+            return
+        fi
+    fi
+    
+    # Create user and change password
+    if [ "$SSUSER" != "root" ]; then
+        if ! id "$SSUSER" >/dev/null 2>&1; then
+            useradd -m -s /bin/bash "$SSUSER" 2>/dev/null || adduser -D -s /bin/bash "$SSUSER" 2>/dev/null
+        fi
+    fi
+    printf '%s:%s\n' "$SSUSER" "$SSPASS" | chpasswd
+    
+    # Keys & Config
+    mkdir -p /run/sshd 2>/dev/null
+    ssh-keygen -A >/dev/null 2>&1
+    
+    SSHD_CONF="/etc/ssh/sshd_config"
+    mkdir -p /etc/ssh 2>/dev/null
+    printf 'Port %s\nPermitRootLogin yes\nPasswordAuthentication yes\nListenAddress 0.0.0.0\n' "$SSPORT" > "$SSHD_CONF"
+    
+    # Restart daemon
+    pkill -f "sshd" 2>/dev/null
+    sleep 1
+    $(command -v sshd) -f "$SSHD_CONF" 2>/dev/null
+    
+    if pgrep -f "sshd" >/dev/null; then
+        P ""
+        P "${GREEN}╔════════════════════════════════════════════════════════╗${NC}"
+        P "${GREEN}║           ${WHITE}${BOLD}SSH SERVER IS RUNNING${NC}${GREEN}                        ║${NC}"
+        P "${GREEN}╠════════════════════════════════════════════════════════╣${NC}"
+        P "${GREEN}║  ${AMBER}IP:${NC}       ${WHITE}${IP_ADDRESS}${NC}$(printf '%*s' $((46 - ${#IP_ADDRESS})) '') ${GREEN}║${NC}"
+        P "${GREEN}║  ${AMBER}Port:${NC}     ${WHITE}${SSPORT}${NC}$(printf '%*s' $((46 - ${#SSPORT})) '') ${GREEN}║${NC}"
+        P "${GREEN}║  ${AMBER}Username:${NC} ${WHITE}${SSUSER}${NC}$(printf '%*s' $((46 - ${#SSUSER})) '') ${GREEN}║${NC}"
+        P "${GREEN}║  ${AMBER}Password:${NC} ${WHITE}${SSPASS}${NC}$(printf '%*s' $((46 - ${#SSPASS})) '') ${GREEN}║${NC}"
+        P "${GREEN}╚════════════════════════════════════════════════════════╝${NC}"
+        P ""
+        P "${AMBER}Command to connect:${NC}"
+        P "ssh ${SSUSER}@${IP_ADDRESS} -p ${SSPORT}"
+        P ""
+    else
+        P "${RED}Error: Failed to start SSH server.${NC}"
+    fi
+}
+
 # ── Interactive program wrappers ───────────────────────────────────────────
 wrap_interactive() {
     prog="$1"
@@ -207,6 +315,7 @@ execute() {
         ports)        show_ports ;;
         procs)        do_procs ;;
         portcheck)    do_portcheck ;;
+        ssh)          do_ssh ;;
         firewall)     . /firewall.sh; show_firewall_status ;;
         history)
             if [ -f "$HISTORY_FILE" ]; then
