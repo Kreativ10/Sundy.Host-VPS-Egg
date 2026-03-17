@@ -134,27 +134,25 @@ install() {
     if [ "$version_count" -eq 1 ]; then
         version=1
     else
-        # ── Version selection menu ──────────────────────────────────────
-        printf "\n"
-        printf "${ORANGE}  ┌─────────────────────────────────────────────┐${NC}\n"
-        printf "${ORANGE}  │  ${WHITE}${BOLD}Select ${pretty_name} version:${ORANGE}$(printf '%*s' $((27 - ${#pretty_name})) '')│${NC}\n"
-        printf "${ORANGE}  └─────────────────────────────────────────────┘${NC}\n"
-        printf "\n"
+        # ── Version selection menu ──────────────────────────────────────────────────
+        echo ""
+        echo "${ORANGE}  Select ${pretty_name} version:${NC}"
+        echo ""
 
         counter=1
         while IFS= read -r line; do
             if [ -n "$line" ]; then
-                printf "    ${LIGHT_ORANGE}[${WHITE}${BOLD}%2d${NC}${LIGHT_ORANGE}]${NC}  %s ${AMBER}%s${NC}\n" "$counter" "$pretty_name" "$line"
+                echo "    ${LIGHT_ORANGE}[${WHITE}${BOLD}${counter}${NC}${LIGHT_ORANGE}]${NC}  ${pretty_name} ${AMBER}${BOLD}${line}${NC}"
                 counter=$((counter + 1))
             fi
         done < "$temp_file"
 
-        printf "    ${LIGHT_ORANGE}[${WHITE}${BOLD} 0${NC}${LIGHT_ORANGE}]${NC}  ${RED}← Go Back${NC}\n"
-        printf "\n"
+        echo "    ${LIGHT_ORANGE}[${WHITE}${BOLD}0${NC}${LIGHT_ORANGE}]${NC}  ${RED}<- Go Back${NC}"
 
         version=""
         while true; do
-            printf "${AMBER}  ☀️  Enter version (0-${version_count}): ${NC}\n"
+            echo ""
+            echo "${AMBER}  Enter version (0-${version_count}): ${NC}"
             read -r version
             if [ "$version" = "0" ]; then
                 rm -f "$temp_file"
@@ -205,23 +203,21 @@ post_install_config() {
 display_menu() {
     print_main_banner
 
-    printf "${ORANGE}  ┌─────────────────────────────────────────────┐${NC}\n"
-    printf "${ORANGE}  │    ${WHITE}${BOLD}☀️  Choose your operating system:${ORANGE}         │${NC}\n"
-    printf "${ORANGE}  └─────────────────────────────────────────────┘${NC}\n"
-    printf "\n"
+    echo "${ORANGE}  Choose your operating system:${NC}"
+    echo ""
 
     echo "$distributions" | while IFS= read -r line; do
         if [ -n "$line" ]; then
             number=$(echo "$line" | cut -d: -f1)
             display_name=$(echo "$line" | cut -d: -f2)
             icon=$(echo "$line" | cut -d: -f6)
-            [ -z "$icon" ] && icon="🐧"
-            printf "    ${icon}  ${LIGHT_ORANGE}[${WHITE}${BOLD}%2s${NC}${LIGHT_ORANGE}]${NC}  %-20s\n" "$number" "$display_name"
+            [ -z "$icon" ] && icon="*"
+            echo "    ${icon}  ${LIGHT_ORANGE}[${WHITE}${BOLD}${number}${NC}${LIGHT_ORANGE}]${NC}  ${display_name}"
         fi
     done
 
-    printf "\n"
-    printf "${AMBER}  ☀️  Enter the distro number (1-${num_distros}): ${NC}\n"
+    echo ""
+    echo "${AMBER}  Enter distro number (1-${num_distros}): ${NC}"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════

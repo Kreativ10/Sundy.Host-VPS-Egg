@@ -1,11 +1,12 @@
 #!/bin/sh
 # ============================================================================
-#  firewall.sh — Sundy.Host VPS | DDoS protection, anti-abuse, bandwidth
+#  firewall.sh — Sundy.Host VPS | DDoS protection + bandwidth limit
+#  NOTE: Requires CAP_NET_ADMIN on the Docker container to work.
+#        Applied at CONTAINER level (before PRoot), not inside rootfs.
 # ============================================================================
 
-# ── Configuration ───────────────────────────────────────────────────────────
-BANDWIDTH_LIMIT="50mbit"
-BURST_LIMIT="10mbit"
+BANDWIDTH_LIMIT="100mbit"
+BURST_LIMIT="15mbit"
 PORT_RANGE_START="30000"
 PORT_RANGE_END="35000"
 SYN_RATE="50/s"
@@ -35,193 +36,186 @@ if [ -z "$ORANGE" ]; then
     NC='\033[0m'
 fi
 
-# ── Safe iptables ──────────────────────────────────────────────────────────
+# Track what was applied
+FW_BW_ACTIVE=0
+FW_IPT_ACTIVE=0
+
 safe_ipt() {
-    iptables "$@" 2>/dev/null
-    return 0
+    if iptables "$@" 2>/dev/null; then
+        return 0
+    fi
+    return 1
 }
 
-# ── Apply all rules ───────────────────────────────────────────────────────
 apply_firewall() {
-    printf "${ORANGE}[☀️ SUNDY.SHIELD]${NC} Applying protection rules...\n"
+    echo "${ORANGE}[SUNDY.SHIELD]${NC} Applying protection..."
 
-    # 1. Bandwidth limit via tc
+    # ── Bandwidth limit via tc ──────────────────────────────────────────
     if command -v tc >/dev/null 2>&1; then
         IFACE=$(ip route show default 2>/dev/null | awk '{print $5; exit}')
         if [ -n "$IFACE" ]; then
             tc qdisc del dev "$IFACE" root 2>/dev/null
-            tc qdisc add dev "$IFACE" root handle 1: htb default 10 2>/dev/null
-            tc class add dev "$IFACE" parent 1: classid 1:10 htb \
-                rate "$BANDWIDTH_LIMIT" burst "$BURST_LIMIT" 2>/dev/null
-            if [ $? -eq 0 ]; then
-                printf "${GREEN}  ✅  Bandwidth limit: ${BANDWIDTH_LIMIT}${NC}\n"
+            if tc qdisc add dev "$IFACE" root handle 1: htb default 10 2>/dev/null && \
+               tc class add dev "$IFACE" parent 1: classid 1:10 htb rate "$BANDWIDTH_LIMIT" burst "$BURST_LIMIT" 2>/dev/null; then
+                echo "${GREEN}  [OK] Bandwidth: ${BANDWIDTH_LIMIT}${NC}"
+                FW_BW_ACTIVE=1
             else
-                printf "${AMBER}  ⚠️  Bandwidth limit: skipped (tc error)${NC}\n"
+                echo "${AMBER}  [--] Bandwidth: needs CAP_NET_ADMIN${NC}"
             fi
-        else
-            printf "${AMBER}  ⚠️  Bandwidth limit: skipped (no interface)${NC}\n"
         fi
     else
-        printf "${AMBER}  ⚠️  Bandwidth limit: skipped (tc unavailable)${NC}\n"
+        echo "${AMBER}  [--] Bandwidth: tc not found${NC}"
     fi
 
-    # 2. Create chain
-    safe_ipt -F VPS_PROTECT 2>/dev/null
-    safe_ipt -X VPS_PROTECT 2>/dev/null
-    safe_ipt -N VPS_PROTECT
+    # ── iptables rules ──────────────────────────────────────────────────
+    # Test if iptables works at all
+    if iptables -L -n >/dev/null 2>&1; then
+        FW_IPT_ACTIVE=1
 
-    # 3. Port range enforcement (ONLY 30000-35000 allowed)
-    # Allow loopback
-    safe_ipt -A VPS_PROTECT -i lo -j ACCEPT
-    safe_ipt -A VPS_PROTECT -o lo -j ACCEPT
-    # Allow established/related connections
-    safe_ipt -A VPS_PROTECT -m state --state ESTABLISHED,RELATED -j ACCEPT
-    # Allow only ports in range 30000-35000
-    safe_ipt -A VPS_PROTECT -p tcp --dport ${PORT_RANGE_START}:${PORT_RANGE_END} -j ACCEPT
-    safe_ipt -A VPS_PROTECT -p udp --dport ${PORT_RANGE_START}:${PORT_RANGE_END} -j ACCEPT
-    # Block everything outside the allowed port range
-    safe_ipt -A VPS_PROTECT -p tcp --dport 0:$((PORT_RANGE_START - 1)) -j DROP
-    safe_ipt -A VPS_PROTECT -p tcp --dport $((PORT_RANGE_END + 1)):65535 -j DROP
-    safe_ipt -A VPS_PROTECT -p udp --dport 0:$((PORT_RANGE_START - 1)) -j DROP
-    safe_ipt -A VPS_PROTECT -p udp --dport $((PORT_RANGE_END + 1)):65535 -j DROP
-    printf "${GREEN}  ✅  Port range: ONLY ${PORT_RANGE_START}-${PORT_RANGE_END} allowed${NC}\n"
+        safe_ipt -F VPS_PROTECT
+        safe_ipt -X VPS_PROTECT
+        safe_ipt -N VPS_PROTECT
 
-    # 4. SYN flood
-    safe_ipt -A VPS_PROTECT -p tcp --syn \
-        -m hashlimit --hashlimit-name syn_flood \
-        --hashlimit-above "$SYN_RATE" --hashlimit-burst "$SYN_BURST" \
-        --hashlimit-mode srcip -j DROP
-    printf "${GREEN}  ✅  SYN flood protection (${SYN_RATE})${NC}\n"
+        # Allow loopback + established
+        safe_ipt -A VPS_PROTECT -i lo -j ACCEPT
+        safe_ipt -A VPS_PROTECT -o lo -j ACCEPT
+        safe_ipt -A VPS_PROTECT -m state --state ESTABLISHED,RELATED -j ACCEPT
 
-    # 5. UDP flood
-    safe_ipt -A VPS_PROTECT -p udp \
-        -m hashlimit --hashlimit-name udp_flood \
-        --hashlimit-above "$UDP_RATE" --hashlimit-burst "$UDP_BURST" \
-        --hashlimit-mode srcip -j DROP
-    printf "${GREEN}  ✅  UDP flood protection (${UDP_RATE})${NC}\n"
+        # Port range: ONLY 30000-35000
+        safe_ipt -A VPS_PROTECT -p tcp --dport ${PORT_RANGE_START}:${PORT_RANGE_END} -j ACCEPT
+        safe_ipt -A VPS_PROTECT -p udp --dport ${PORT_RANGE_START}:${PORT_RANGE_END} -j ACCEPT
+        safe_ipt -A VPS_PROTECT -p tcp --dport 0:$((PORT_RANGE_START - 1)) -j DROP
+        safe_ipt -A VPS_PROTECT -p tcp --dport $((PORT_RANGE_END + 1)):65535 -j DROP
+        safe_ipt -A VPS_PROTECT -p udp --dport 0:$((PORT_RANGE_START - 1)) -j DROP
+        safe_ipt -A VPS_PROTECT -p udp --dport $((PORT_RANGE_END + 1)):65535 -j DROP
+        echo "${GREEN}  [OK] Ports: ${PORT_RANGE_START}-${PORT_RANGE_END} only${NC}"
 
-    # 6. ICMP flood
-    safe_ipt -A VPS_PROTECT -p icmp --icmp-type echo-request \
-        -m hashlimit --hashlimit-name icmp_flood \
-        --hashlimit-above "$ICMP_RATE" --hashlimit-burst "$ICMP_BURST" \
-        --hashlimit-mode srcip -j DROP
-    safe_ipt -A VPS_PROTECT -p icmp --icmp-type redirect -j DROP
-    printf "${GREEN}  ✅  ICMP flood protection (${ICMP_RATE})${NC}\n"
+        # SYN flood
+        safe_ipt -A VPS_PROTECT -p tcp --syn \
+            -m hashlimit --hashlimit-name syn_flood \
+            --hashlimit-above "$SYN_RATE" --hashlimit-burst "$SYN_BURST" \
+            --hashlimit-mode srcip -j DROP
+        echo "${GREEN}  [OK] SYN flood protection${NC}"
 
-    # 7. Port scan detection
-    safe_ipt -A VPS_PROTECT -p tcp --tcp-flags ALL NONE -j DROP
-    safe_ipt -A VPS_PROTECT -p tcp --tcp-flags ALL ALL -j DROP
-    safe_ipt -A VPS_PROTECT -p tcp --tcp-flags ALL FIN,URG,PSH -j DROP
-    safe_ipt -A VPS_PROTECT -p tcp --tcp-flags ALL SYN,RST,ACK,FIN,URG -j DROP
-    safe_ipt -A VPS_PROTECT -p tcp --tcp-flags SYN,RST SYN,RST -j DROP
-    safe_ipt -A VPS_PROTECT -p tcp --tcp-flags SYN,FIN SYN,FIN -j DROP
-    safe_ipt -A VPS_PROTECT -p tcp -m state --state NEW \
-        -m recent --name PORTSCAN --set
-    safe_ipt -A VPS_PROTECT -p tcp -m state --state NEW \
-        -m recent --name PORTSCAN --update \
-        --seconds "$PORTSCAN_SECONDS" --hitcount "$PORTSCAN_HITCOUNT" -j DROP
-    printf "${GREEN}  ✅  Port scan detection & block${NC}\n"
+        # UDP flood
+        safe_ipt -A VPS_PROTECT -p udp \
+            -m hashlimit --hashlimit-name udp_flood \
+            --hashlimit-above "$UDP_RATE" --hashlimit-burst "$UDP_BURST" \
+            --hashlimit-mode srcip -j DROP
+        echo "${GREEN}  [OK] UDP flood protection${NC}"
 
-    # 8. Amplification block
-    safe_ipt -A VPS_PROTECT -p udp --dport 11211 -j DROP
-    safe_ipt -A VPS_PROTECT -p udp --sport 53 -m length --length 512: -j DROP
-    safe_ipt -A VPS_PROTECT -p udp --dport 19 -j DROP
-    safe_ipt -A VPS_PROTECT -p udp --dport 1900 -j DROP
-    safe_ipt -A VPS_PROTECT -p udp --dport 389 -j DROP
-    printf "${GREEN}  ✅  Amplification block (Memcache/DNS/SSDP/Chargen/LDAP)${NC}\n"
+        # ICMP flood
+        safe_ipt -A VPS_PROTECT -p icmp --icmp-type echo-request \
+            -m hashlimit --hashlimit-name icmp_flood \
+            --hashlimit-above "$ICMP_RATE" --hashlimit-burst "$ICMP_BURST" \
+            --hashlimit-mode srcip -j DROP
+        safe_ipt -A VPS_PROTECT -p icmp --icmp-type redirect -j DROP
+        echo "${GREEN}  [OK] ICMP flood protection${NC}"
 
-    # 9. SMTP block
-    safe_ipt -A VPS_PROTECT -p tcp --dport 25 -j DROP
-    safe_ipt -A VPS_PROTECT -p tcp --dport 587 -j DROP
-    safe_ipt -A VPS_PROTECT -p tcp --dport 465 -j DROP
-    printf "${GREEN}  ✅  SMTP outbound block (anti-spam)${NC}\n"
+        # Port scan
+        safe_ipt -A VPS_PROTECT -p tcp --tcp-flags ALL NONE -j DROP
+        safe_ipt -A VPS_PROTECT -p tcp --tcp-flags ALL ALL -j DROP
+        safe_ipt -A VPS_PROTECT -p tcp --tcp-flags ALL FIN,URG,PSH -j DROP
+        safe_ipt -A VPS_PROTECT -p tcp --tcp-flags SYN,RST SYN,RST -j DROP
+        safe_ipt -A VPS_PROTECT -p tcp --tcp-flags SYN,FIN SYN,FIN -j DROP
+        echo "${GREEN}  [OK] Port scan detection${NC}"
 
-    # 10. Connection limit
-    safe_ipt -A VPS_PROTECT -p tcp -m connlimit \
-        --connlimit-above "$CONN_LIMIT_PER_IP" --connlimit-mask 32 -j DROP
-    printf "${GREEN}  ✅  Connection limit per IP (max ${CONN_LIMIT_PER_IP})${NC}\n"
+        # Amplification block
+        safe_ipt -A VPS_PROTECT -p udp --dport 11211 -j DROP
+        safe_ipt -A VPS_PROTECT -p udp --dport 19 -j DROP
+        safe_ipt -A VPS_PROTECT -p udp --dport 1900 -j DROP
+        safe_ipt -A VPS_PROTECT -p udp --dport 389 -j DROP
+        echo "${GREEN}  [OK] Amplification block${NC}"
 
-    # 11. New connection rate
-    safe_ipt -A VPS_PROTECT -p tcp -m state --state NEW \
-        -m hashlimit --hashlimit-name new_conn \
-        --hashlimit-above "$NEW_CONN_RATE" --hashlimit-burst 200 \
-        --hashlimit-mode srcip -j DROP
-    printf "${GREEN}  ✅  New connection rate limit (${NEW_CONN_RATE})${NC}\n"
+        # SMTP block
+        safe_ipt -A VPS_PROTECT -p tcp --dport 25 -j DROP
+        safe_ipt -A VPS_PROTECT -p tcp --dport 587 -j DROP
+        safe_ipt -A VPS_PROTECT -p tcp --dport 465 -j DROP
+        echo "${GREEN}  [OK] SMTP block${NC}"
 
-    # 12. Invalid packets
-    safe_ipt -A VPS_PROTECT -m state --state INVALID -j DROP
-    printf "${GREEN}  ✅  Invalid packet drop${NC}\n"
+        # Connection limits
+        safe_ipt -A VPS_PROTECT -p tcp -m connlimit \
+            --connlimit-above "$CONN_LIMIT_PER_IP" --connlimit-mask 32 -j DROP
+        echo "${GREEN}  [OK] Connection limit (${CONN_LIMIT_PER_IP}/IP)${NC}"
 
-    # 13. Bogon sources
-    safe_ipt -A VPS_PROTECT -s 0.0.0.0/8 -j DROP
-    safe_ipt -A VPS_PROTECT -s 127.0.0.0/8 ! -i lo -j DROP
-    safe_ipt -A VPS_PROTECT -s 224.0.0.0/4 -j DROP
-    safe_ipt -A VPS_PROTECT -s 240.0.0.0/4 -j DROP
-    printf "${GREEN}  ✅  Bogon/spoofed source block${NC}\n"
+        # New conn rate
+        safe_ipt -A VPS_PROTECT -p tcp -m state --state NEW \
+            -m hashlimit --hashlimit-name new_conn \
+            --hashlimit-above "$NEW_CONN_RATE" --hashlimit-burst 200 \
+            --hashlimit-mode srcip -j DROP
+        echo "${GREEN}  [OK] New connection rate limit${NC}"
 
-    # Attach chain
-    safe_ipt -D INPUT -j VPS_PROTECT 2>/dev/null
-    safe_ipt -D OUTPUT -j VPS_PROTECT 2>/dev/null
-    safe_ipt -I INPUT -j VPS_PROTECT
-    safe_ipt -I OUTPUT -j VPS_PROTECT
+        # Invalid + bogon
+        safe_ipt -A VPS_PROTECT -m state --state INVALID -j DROP
+        safe_ipt -A VPS_PROTECT -s 0.0.0.0/8 -j DROP
+        safe_ipt -A VPS_PROTECT -s 224.0.0.0/4 -j DROP
+        safe_ipt -A VPS_PROTECT -s 240.0.0.0/4 -j DROP
+        echo "${GREEN}  [OK] Invalid + bogon block${NC}"
 
-    printf "\n${ORANGE}[☀️ SUNDY.SHIELD]${NC} All protection rules applied.\n\n"
+        # Attach chain
+        safe_ipt -D INPUT -j VPS_PROTECT 2>/dev/null
+        safe_ipt -D OUTPUT -j VPS_PROTECT 2>/dev/null
+        safe_ipt -I INPUT -j VPS_PROTECT
+        safe_ipt -I OUTPUT -j VPS_PROTECT
+
+    else
+        echo "${AMBER}  [--] iptables: needs CAP_NET_ADMIN${NC}"
+        echo "${AMBER}  [--] Ask your host admin to enable CAP_NET_ADMIN${NC}"
+    fi
+
+    echo "${ORANGE}[SUNDY.SHIELD]${NC} Done."
+    echo ""
 }
 
-# ── Status display ─────────────────────────────────────────────────────────
+# ── Status ──────────────────────────────────────────────────────────────────
 show_firewall_status() {
-    printf "\n"
-    printf "${DARK_ORANGE}╔═══════════════════════════════════════════════════════════════╗${NC}\n"
-    printf "${DARK_ORANGE}║                                                               ║${NC}\n"
-    printf "${DARK_ORANGE}║          ${WHITE}${BOLD}🛡️  SUNDY.SHIELD — FIREWALL STATUS  🛡️${DARK_ORANGE}            ║${NC}\n"
-    printf "${DARK_ORANGE}║                                                               ║${NC}\n"
-    printf "${DARK_ORANGE}╠═══════════════════════════════════════════════════════════════╣${NC}\n"
-    printf "${DARK_ORANGE}║                                                               ║${NC}\n"
+    echo ""
+    echo "${DARK_ORANGE}╔════════════════════════════════════════════════════════╗${NC}"
+    echo "${DARK_ORANGE}║                                                        ║${NC}"
+    echo "${DARK_ORANGE}║      ${WHITE}${BOLD}SUNDY.SHIELD --- FIREWALL STATUS${DARK_ORANGE}               ║${NC}"
+    echo "${DARK_ORANGE}║                                                        ║${NC}"
+    echo "${DARK_ORANGE}╠════════════════════════════════════════════════════════╣${NC}"
+    echo "${DARK_ORANGE}║                                                        ║${NC}"
 
-    _check_rule() {
-        label="$1"
-        check="$2"
-        if iptables -L VPS_PROTECT 2>/dev/null | grep -qi "$check"; then
-            printf "${DARK_ORANGE}║  ${GREEN}● ACTIVE${NC}    %-46s${DARK_ORANGE}║${NC}\n" "$label"
-        else
-            printf "${DARK_ORANGE}║  ${RED}○ INACTIVE${NC}  %-46s${DARK_ORANGE}║${NC}\n" "$label"
-        fi
-    }
+    if [ "$FW_IPT_ACTIVE" = "1" ] && iptables -L VPS_PROTECT -n >/dev/null 2>&1; then
+        echo "${DARK_ORANGE}║  ${GREEN}ACTIVE${NC}   iptables firewall${DARK_ORANGE}                        ║${NC}"
 
-    _check_rule "Port Range (${PORT_RANGE_START}-${PORT_RANGE_END})"  "${PORT_RANGE_START}"
-    _check_rule "SYN Flood Protection"         "syn_flood"
-    _check_rule "UDP Flood Protection"         "udp_flood"
-    _check_rule "ICMP Flood Protection"        "icmp_flood"
-    _check_rule "Port Scan Detection"          "PORTSCAN"
-    _check_rule "Amplification Block"          "dpt:11211"
-    _check_rule "SMTP Block (Anti-Spam)"       "dpt:smtp"
-    _check_rule "Connection Limit per IP"      "connlimit"
-    _check_rule "New Connection Rate Limit"    "new_conn"
-    _check_rule "Invalid Packet Drop"          "INVALID"
-    _check_rule "Bogon Source Block"           "0.0.0.0"
-
-    printf "${DARK_ORANGE}║                                                               ║${NC}\n"
-    printf "${DARK_ORANGE}╠═══════════════════════════════════════════════════════════════╣${NC}\n"
-
-    printf "${DARK_ORANGE}║                                                               ║${NC}\n"
-    if command -v tc >/dev/null 2>&1; then
-        IFACE=$(ip route show default 2>/dev/null | awk '{print $5; exit}')
-        if tc class show dev "$IFACE" 2>/dev/null | grep -q "htb"; then
-            printf "${DARK_ORANGE}║  ${GREEN}● ACTIVE${NC}    Bandwidth Limit: %-25s${DARK_ORANGE}║${NC}\n" "$BANDWIDTH_LIMIT"
-        else
-            printf "${DARK_ORANGE}║  ${RED}○ INACTIVE${NC}  Bandwidth Limit${DARK_ORANGE}                              ║${NC}\n"
-        fi
+        _cr() {
+            if iptables -L VPS_PROTECT -n 2>/dev/null | grep -qi "$2"; then
+                echo "${DARK_ORANGE}║    ${GREEN}+${NC} $1${DARK_ORANGE}$(printf '%*s' $((38 - ${#1})) '')║${NC}"
+            else
+                echo "${DARK_ORANGE}║    ${RED}-${NC} $1${DARK_ORANGE}$(printf '%*s' $((38 - ${#1})) '')║${NC}"
+            fi
+        }
+        _cr "Port range 30000-35000"  "${PORT_RANGE_START}"
+        _cr "SYN flood protection"    "syn_flood"
+        _cr "UDP flood protection"    "udp_flood"
+        _cr "ICMP flood protection"   "icmp_flood"
+        _cr "Port scan detection"     "SYN,RST"
+        _cr "Amplification block"     "dpt:11211"
+        _cr "SMTP block"              "dpt:25"
+        _cr "Connection limit"        "connlimit"
+        _cr "Rate limit"              "new_conn"
+        _cr "Invalid/bogon block"     "INVALID"
     else
-        printf "${DARK_ORANGE}║  ${AMBER}⚠ N/A${NC}       Bandwidth Limit (tc unavailable)${DARK_ORANGE}            ║${NC}\n"
+        echo "${DARK_ORANGE}║  ${RED}INACTIVE${NC} iptables (no CAP_NET_ADMIN)${DARK_ORANGE}              ║${NC}"
     fi
 
-    printf "${DARK_ORANGE}║                                                               ║${NC}\n"
-    printf "${DARK_ORANGE}╚═══════════════════════════════════════════════════════════════╝${NC}\n"
-    printf "\n"
+    echo "${DARK_ORANGE}║                                                        ║${NC}"
 
-    dropped=$(iptables -L VPS_PROTECT -v -n 2>/dev/null | awk '/DROP/ {total+=$1} END {print total+0}')
-    if [ "$dropped" -gt 0 ] 2>/dev/null; then
-        printf "${AMBER}  📊 Total blocked packets: ${WHITE}${BOLD}${dropped}${NC}\n"
+    if [ "$FW_BW_ACTIVE" = "1" ]; then
+        echo "${DARK_ORANGE}║  ${GREEN}ACTIVE${NC}   Bandwidth limit: ${BANDWIDTH_LIMIT}${DARK_ORANGE}                 ║${NC}"
+    else
+        echo "${DARK_ORANGE}║  ${RED}INACTIVE${NC} Bandwidth limit (no CAP_NET_ADMIN)${DARK_ORANGE}         ║${NC}"
     fi
-    printf "\n"
+
+    echo "${DARK_ORANGE}║                                                        ║${NC}"
+    echo "${DARK_ORANGE}╚════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+
+    if [ "$FW_IPT_ACTIVE" = "0" ] && [ "$FW_BW_ACTIVE" = "0" ]; then
+        echo "${AMBER}  NOTE: Protection requires CAP_NET_ADMIN capability.${NC}"
+        echo "${AMBER}  Contact your hosting admin to enable it.${NC}"
+        echo ""
+    fi
 }
