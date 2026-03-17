@@ -179,7 +179,9 @@ do_ssh() {
     
     config_file="$HOME/vps.config"
     AVAILABLE_PORTS=""
-    IP_ADDRESS="127.0.0.1"
+    
+    # Use PUBLIC_IP set by helper.sh at container level
+    IP_ADDRESS="${PUBLIC_IP:-UNKNOWN}"
     
     if [ -f "$config_file" ]; then
         while IFS='=' read -r key value; do
@@ -199,14 +201,7 @@ do_ssh() {
         done < "$config_file"
     fi
     
-    # Clean up duplicate ports dynamically
-    AVAILABLE_PORTS=$(echo "$AVAILABLE_PORTS" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/^ //;s/ $//')
-
-    # Attempt to get public IP
-    if command -v curl >/dev/null; then
-        PUBLIC_IP=$(curl -s --connect-timeout 3 icanhazip.com 2>/dev/null)
-        [ -n "$PUBLIC_IP" ] && IP_ADDRESS="$PUBLIC_IP"
-    fi
+    AVAILABLE_PORTS=$(echo "$AVAILABLE_PORTS" | tr ' ' '\n' | sort -un | tr '\n' ' ' | sed 's/^ //;s/ $//')
 
     P ""
     if [ -z "$AVAILABLE_PORTS" ] || [ "$AVAILABLE_PORTS" = " " ]; then

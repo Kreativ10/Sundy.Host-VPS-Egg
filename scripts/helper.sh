@@ -52,6 +52,17 @@ parse_ports() {
 # Apply firewall at container level (before PRoot)
 apply_firewall
 
+# Get public IP BEFORE entering PRoot (PRoot can't reliably do external HTTP)
+export PUBLIC_IP=$(curl -s --connect-timeout 3 https://icanhazip.com 2>/dev/null | tr -d '[:space:]')
+if [ -z "$PUBLIC_IP" ]; then
+    export PUBLIC_IP=$(curl -s --connect-timeout 3 https://api.ipify.org 2>/dev/null | tr -d '[:space:]')
+fi
+if [ -z "$PUBLIC_IP" ]; then
+    export PUBLIC_IP=$(curl -s --connect-timeout 3 https://ifconfig.me 2>/dev/null | tr -d '[:space:]')
+fi
+[ -z "$PUBLIC_IP" ] && export PUBLIC_IP="UNKNOWN"
+P "${AMBER}[Sundy.Host] Public IP: ${PUBLIC_IP}${NC}"
+
 # Launch PRoot
 ensure_scripts
 port_args=$(parse_ports)
