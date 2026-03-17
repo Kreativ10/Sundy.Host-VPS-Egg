@@ -1,7 +1,7 @@
 #!/bin/sh
 # ============================================================================
 #  firewall.sh — Sundy.Host VPS | DDoS protection + bandwidth limit
-#  NOTE: Requires CAP_NET_ADMIN on the Docker container to work.
+#  Requires CAP_NET_ADMIN. Firewall is applied BEFORE PRoot.
 # ============================================================================
 
 BANDWIDTH_LIMIT="100mbit"
@@ -34,7 +34,6 @@ if [ -z "$ORANGE" ]; then
     NC='\033[0m'
 fi
 
-# Safe print function (same as common.sh P)
 _P() {
     printf '%b\n' "$1"
 }
@@ -43,16 +42,13 @@ FW_BW_ACTIVE=0
 FW_IPT_ACTIVE=0
 
 safe_ipt() {
-    if iptables "$@" 2>/dev/null; then
-        return 0
-    fi
+    if iptables "$@" 2>/dev/null; then return 0; fi
     return 1
 }
 
 apply_firewall() {
     _P "${ORANGE}[SUNDY.SHIELD]${NC} Applying protection..."
 
-    # Bandwidth limit
     if command -v tc >/dev/null 2>&1; then
         IFACE=$(ip route show default 2>/dev/null | awk '{print $5; exit}')
         if [ -n "$IFACE" ]; then
@@ -69,7 +65,6 @@ apply_firewall() {
         _P "${AMBER}  [--] Bandwidth: tc not found${NC}"
     fi
 
-    # iptables rules
     if iptables -L -n >/dev/null 2>&1; then
         FW_IPT_ACTIVE=1
 
@@ -89,22 +84,13 @@ apply_firewall() {
         safe_ipt -A VPS_PROTECT -p udp --dport $((PORT_RANGE_END + 1)):65535 -j DROP
         _P "${GREEN}  [OK] Ports: ${PORT_RANGE_START}-${PORT_RANGE_END} only${NC}"
 
-        safe_ipt -A VPS_PROTECT -p tcp --syn \
-            -m hashlimit --hashlimit-name syn_flood \
-            --hashlimit-above "$SYN_RATE" --hashlimit-burst "$SYN_BURST" \
-            --hashlimit-mode srcip -j DROP
+        safe_ipt -A VPS_PROTECT -p tcp --syn -m hashlimit --hashlimit-name syn_flood --hashlimit-above "$SYN_RATE" --hashlimit-burst "$SYN_BURST" --hashlimit-mode srcip -j DROP
         _P "${GREEN}  [OK] SYN flood protection${NC}"
 
-        safe_ipt -A VPS_PROTECT -p udp \
-            -m hashlimit --hashlimit-name udp_flood \
-            --hashlimit-above "$UDP_RATE" --hashlimit-burst "$UDP_BURST" \
-            --hashlimit-mode srcip -j DROP
+        safe_ipt -A VPS_PROTECT -p udp -m hashlimit --hashlimit-name udp_flood --hashlimit-above "$UDP_RATE" --hashlimit-burst "$UDP_BURST" --hashlimit-mode srcip -j DROP
         _P "${GREEN}  [OK] UDP flood protection${NC}"
 
-        safe_ipt -A VPS_PROTECT -p icmp --icmp-type echo-request \
-            -m hashlimit --hashlimit-name icmp_flood \
-            --hashlimit-above "$ICMP_RATE" --hashlimit-burst "$ICMP_BURST" \
-            --hashlimit-mode srcip -j DROP
+        safe_ipt -A VPS_PROTECT -p icmp --icmp-type echo-request -m hashlimit --hashlimit-name icmp_flood --hashlimit-above "$ICMP_RATE" --hashlimit-burst "$ICMP_BURST" --hashlimit-mode srcip -j DROP
         safe_ipt -A VPS_PROTECT -p icmp --icmp-type redirect -j DROP
         _P "${GREEN}  [OK] ICMP flood protection${NC}"
 
@@ -126,14 +112,10 @@ apply_firewall() {
         safe_ipt -A VPS_PROTECT -p tcp --dport 465 -j DROP
         _P "${GREEN}  [OK] SMTP block${NC}"
 
-        safe_ipt -A VPS_PROTECT -p tcp -m connlimit \
-            --connlimit-above "$CONN_LIMIT_PER_IP" --connlimit-mask 32 -j DROP
+        safe_ipt -A VPS_PROTECT -p tcp -m connlimit --connlimit-above "$CONN_LIMIT_PER_IP" --connlimit-mask 32 -j DROP
         _P "${GREEN}  [OK] Connection limit (${CONN_LIMIT_PER_IP}/IP)${NC}"
 
-        safe_ipt -A VPS_PROTECT -p tcp -m state --state NEW \
-            -m hashlimit --hashlimit-name new_conn \
-            --hashlimit-above "$NEW_CONN_RATE" --hashlimit-burst 200 \
-            --hashlimit-mode srcip -j DROP
+        safe_ipt -A VPS_PROTECT -p tcp -m state --state NEW -m hashlimit --hashlimit-name new_conn --hashlimit-above "$NEW_CONN_RATE" --hashlimit-burst 200 --hashlimit-mode srcip -j DROP
         _P "${GREEN}  [OK] New connection rate limit${NC}"
 
         safe_ipt -A VPS_PROTECT -m state --state INVALID -j DROP
@@ -148,30 +130,27 @@ apply_firewall() {
         safe_ipt -I OUTPUT -j VPS_PROTECT
     else
         _P "${AMBER}  [--] iptables: needs CAP_NET_ADMIN${NC}"
-        _P "${AMBER}  [--] Ask host admin to enable CAP_NET_ADMIN${NC}"
     fi
 
-    _P "${ORANGE}[SUNDY.SHIELD]${NC} Done."
+    _P "${ORANGE}[SUNDY.SHIELD]${NC} Initialization complete."
     _P ""
 }
 
 show_firewall_status() {
     _P ""
-    _P "${DARK_ORANGE}╔════════════════════════════════════════════════════════╗${NC}"
-    _P "${DARK_ORANGE}║                                                        ║${NC}"
-    _P "${DARK_ORANGE}║      ${WHITE}${BOLD}SUNDY.SHIELD --- FIREWALL STATUS${NC}${DARK_ORANGE}               ║${NC}"
-    _P "${DARK_ORANGE}║                                                        ║${NC}"
-    _P "${DARK_ORANGE}╠════════════════════════════════════════════════════════╣${NC}"
-    _P "${DARK_ORANGE}║                                                        ║${NC}"
+    _P "${DARK_ORANGE}╔════════════════════════════════════════════════════════════════╗${NC}"
+    _P "${DARK_ORANGE}║                                                                ║${NC}"
+    _P "${DARK_ORANGE}║           ${WHITE}${BOLD}SUNDY.SHIELD --- FIREWALL STATUS${NC}${DARK_ORANGE}                     ║${NC}"
+    _P "${DARK_ORANGE}║                                                                ║${NC}"
+    _P "${DARK_ORANGE}╠════════════════════════════════════════════════════════════════╣${NC}"
+    _P "${DARK_ORANGE}║                                                                ║${NC}"
 
     if [ "$FW_IPT_ACTIVE" = "1" ] && iptables -L VPS_PROTECT -n >/dev/null 2>&1; then
-        _P "${DARK_ORANGE}║  ${GREEN}ACTIVE${NC}   iptables firewall"
-
         _cr() {
             if iptables -L VPS_PROTECT -n 2>/dev/null | grep -qi "$2"; then
-                _P "${DARK_ORANGE}║    ${GREEN}+${NC} $1"
+                _P "${DARK_ORANGE}║    ${GREEN}+${NC} $1$(printf '%*s' $((42 - ${#1})) '') ${DARK_ORANGE}║${NC}"
             else
-                _P "${DARK_ORANGE}║    ${RED}-${NC} $1"
+                _P "${DARK_ORANGE}║    ${RED}-${NC} $1$(printf '%*s' $((42 - ${#1})) '') ${DARK_ORANGE}║${NC}"
             fi
         }
         _cr "Port range 30000-35000" "${PORT_RANGE_START}"
@@ -180,29 +159,25 @@ show_firewall_status() {
         _cr "ICMP flood protection" "icmp_flood"
         _cr "Port scan detection"   "SYN,RST"
         _cr "Amplification block"   "dpt:11211"
-        _cr "SMTP block"            "dpt:25"
+        _cr "SMTP block (Anti-spam)""dpt:25"
         _cr "Connection limit"      "connlimit"
         _cr "Rate limit"            "new_conn"
         _cr "Invalid/bogon block"   "INVALID"
     else
-        _P "${DARK_ORANGE}║  ${RED}INACTIVE${NC} iptables (no CAP_NET_ADMIN)"
+        _P "${DARK_ORANGE}║  ${RED}INACTIVE${NC}  iptables (Requires Wing NET_ADMIN)${DARK_ORANGE}                  ║${NC}"
     fi
 
-    _P "${DARK_ORANGE}║                                                        ║${NC}"
+    _P "${DARK_ORANGE}║                                                                ║${NC}"
+    _P "${DARK_ORANGE}╠════════════════════════════════════════════════════════════════╣${NC}"
+    _P "${DARK_ORANGE}║                                                                ║${NC}"
 
     if [ "$FW_BW_ACTIVE" = "1" ]; then
-        _P "${DARK_ORANGE}║  ${GREEN}ACTIVE${NC}   Bandwidth limit: ${BANDWIDTH_LIMIT}"
+        _P "${DARK_ORANGE}║    ${GREEN}+${NC} Bandwidth limit: ${BANDWIDTH_LIMIT}${DARK_ORANGE}                                   ║${NC}"
     else
-        _P "${DARK_ORANGE}║  ${RED}INACTIVE${NC} Bandwidth limit (no CAP_NET_ADMIN)"
+        _P "${DARK_ORANGE}║  ${RED}INACTIVE${NC}  Bandwidth Limit (Requires Wing NET_ADMIN)${DARK_ORANGE}           ║${NC}"
     fi
 
-    _P "${DARK_ORANGE}║                                                        ║${NC}"
-    _P "${DARK_ORANGE}╚════════════════════════════════════════════════════════╝${NC}"
+    _P "${DARK_ORANGE}║                                                                ║${NC}"
+    _P "${DARK_ORANGE}╚════════════════════════════════════════════════════════════════╝${NC}"
     _P ""
-
-    if [ "$FW_IPT_ACTIVE" = "0" ] && [ "$FW_BW_ACTIVE" = "0" ]; then
-        _P "${AMBER}  NOTE: Protection requires CAP_NET_ADMIN capability.${NC}"
-        _P "${AMBER}  Contact your hosting admin to enable it.${NC}"
-        _P ""
-    fi
 }
